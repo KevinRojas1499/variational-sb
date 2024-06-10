@@ -1,8 +1,6 @@
 """Abstract SDE classes, Reverse SDE, and VE/VP SDEs."""
 import abc
 import torch
-import utils.diff as diff
-import utils.shape_utils as shape_utils
 import torch.nn as nn
 
 from utils.misc import batch_matrix_product
@@ -106,21 +104,6 @@ class VP(SDE):
   def prior_sampling(self, shape, device):
     return torch.randn(*shape, dtype=torch.float, device=device)
 
-  def eval_fp(self, score_fn, x,t, approx_div=False):
-    score = shape_utils.Merge(score_fn, x[0].shape)
-    with torch.enable_grad():
-      x_aux = x.clone().requires_grad_(True).view(x.shape[0],-1)
-      partial_t = diff.t_finite_diff(score,x_aux,t)
-      score_xt = score(x_aux,t)
-      func = diff.hutch_div(score,x_aux,t) if approx_div else diff.batch_div_exact_2(score,x_aux,t) \
-        + torch.sum(score_xt**2,dim=-1,keepdim=True) \
-        + torch.sum(x_aux*score_xt,dim=-1,keepdim=True)
-      gradient = diff.gradient(func,x_aux)
-      # print((partial_t - gradient))
-      norm = torch.sum((partial_t - 0.5 * self.beta(t).view(-1,1) * gradient)**2,dim=-1)**.5
-      return (torch.mean(norm)/x_aux.shape[-1]) # This already includes dividing by D when m = 1
-
-
 
 
 class VariationaLinearlDrift(nn.Module):
@@ -169,20 +152,17 @@ class LinearSchrodingerBridge(SDE):
     betas = self.beta(time_pts).unsqueeze(-1)
     return torch.sum(betas * Ats,dim=1) * dt.unsqueeze(-1)
   
-  def exp_int(self, t):
-    mat = -.5 * self.int_beta_ds(t)
-    return mat.matrix_exp()
   
   def compute_variance(self, t):
     int_mat = self.int_beta_ds(t)
     dim = int_mat.shape[-1]
     C_H_power = torch.zeros((t.shape[0], 2 * dim, 2 * dim),device=int_mat.device)
     C_H_pair = torch.zeros_like(C_H_power)
-    
-    for i in range(t.shape[0]):
-      C_H_power[i] = torch.block_diag(-.5 * int_mat[i], .5 * int_mat[i].T)
-      C_H_power[i, :dim, dim:] = self.beta_int(t[i]) * torch.eye(dim,device=int_mat.device).unsqueeze(0)
-      C_H_pair[i] = torch.linalg.matrix_exp(C_H_power[i])
+    C_H_power[:,:dim, :dim] = -.5 * int_mat
+    C_H_power[:,-dim:, -dim:] = .5 * int_mat
+    C_H_power[:, :dim, dim:] = self.beta_int(t).view(-1,1,1) * torch.eye(dim,device=int_mat.device).unsqueeze(0).expand(t.shape[0],-1,-1)
+
+    C_H_pair = torch.linalg.matrix_exp(C_H_power)
 
     initial_cond = torch.cat((torch.zeros((dim,dim), device=int_mat.device), torch.eye(dim,device=int_mat.device)), dim=0)
     C_H = torch.einsum('tij,jk->tik', C_H_pair, initial_cond)
@@ -200,9 +180,14 @@ class LinearSchrodingerBridge(SDE):
     # If    x is of shape [B, H, W, C]
     # then  t is of shape [B, 1, 1, 1] 
     # And similarly for other shapes
-    big_beta = self.exp_int(t)
+    big_beta = (-.5 * self.int_beta_ds(t)).matrix_exp()
     cov, L, invL = self.compute_variance(t)
     return batch_matrix_product(big_beta, x), L, invL
+  
+  def unscaled_marginal_prob_std(self, t):
+    mat = (.5 * self.int_beta_ds(t)).matrix_exp()
+    cov, L, invL = self.compute_variance(t)
+    return mat @ L
   
   def drift(self, x,t):
     return - .5 * self.beta(t) * batch_matrix_product(self.A(t), x) 
@@ -353,26 +338,12 @@ class CLD(SDE):
   
   def prior_sampling(self, shape, device):
     return torch.randn(*shape, dtype=torch.float, device=device)
-
-  def eval_fp(self, score, z,t):
-    partial_t = diff.t_finite_diff(score,z,t)
-    x,v = torch.chunk(z,2,dim=-1)
-    score_v  = lambda x,t : score(x,t)[:,1]
-    score_zt = score(z,t)
-    score_x,score_v = torch.chunk(score_zt,2,dim=-1)
-    
-    func = diff.hutch_div(score_v,z,t) \
-      + torch.sum(score_v**2,dim=-1,keepdim=True) \
-      - torch.sum(v * score_x,dim=-1,keepdim=True) \
-      + torch.sum((x+self.gamma* v)*score_v,dim=-1,keepdim=True)
-      
-    gradient = diff.gradient(func,z)
-    return torch.mean((partial_t - gradient)**2)**.5 # This already includes dividing by D when m = 1
-  
   
   
 def get_sde(sde_name):
   if sde_name == 'vp':
     return VP()
+  if sde_name == 'sb':
+    return LinearSchrodingerBridge()
   elif sde_name == 'cld':
     return CLD()

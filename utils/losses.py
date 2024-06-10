@@ -15,7 +15,19 @@ def dsm_loss(sde : SDEs.SDE,data, model):
     return torch.mean(torch.sum(flatten_error,dim=1))
 
 
-def sb_loss(sde : SDEs.SDE,data, model):
+def sb_loss(sde : SDEs.LinearSchrodingerBridge,data, model):
+    # This one assumes that we are parametrizing a denoiser
+    eps = sde.delta
+    times = (torch.rand((data.shape[0]),device=data.device) * (1-eps) + eps) * sde.T()
+    shaped_t = times.reshape(-1,1,1,1) if len(data.shape) > 2 else times.reshape(-1,1)
+    L_hat = sde.unscaled_marginal_prob_std(shaped_t)
+    noise = torch.randn_like(data,device=data.device)
+    perturbed_data = data + batch_matrix_product(L_hat, noise)
+    flatten_error = ((model(perturbed_data,times) - data)**2).view(data.shape[0],-1)
+    
+    return torch.mean(torch.sum(flatten_error,dim=1))
+
+def naive_sb_loss(sde : SDEs.SDE,data, model):
     eps = sde.delta
     times = (torch.rand((data.shape[0]),device=data.device) * (1-eps) + eps) * sde.T()
     shaped_t = times.reshape(-1,1,1,1) if len(data.shape) > 2 else times.reshape(-1,1)

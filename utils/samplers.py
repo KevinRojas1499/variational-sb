@@ -1,7 +1,16 @@
 import torch
+import matplotlib.pyplot as plt
 from tqdm import tqdm
 from utils.models import MLP
 from utils.sde_lib import SDE, CLD
+
+def plot_trajectory(x_t, i, t):
+    lim = 10
+    plt.xlim([-lim,lim])
+    plt.ylim([-lim,lim])
+    plt.scatter(x_t[:,0].cpu(), x_t[:,1].cpu(),s=2)
+    plt.savefig(f'./trajectory/{i}_{t.item() : .3f}.png')
+    plt.close()
 
 def em_sampler(sde : SDE, score_model, 
                 sampling_shape,
@@ -33,7 +42,7 @@ def get_euler_maruyama(num_samples, sde, model, dim, device):
     with torch.no_grad():
         x_t = sde.prior_sampling((num_samples,dim),device=device)
 
-        time_pts = sde.time_steps(1000, device)
+        time_pts = sde.time_steps(100, device)
         pbar = tqdm(range(len(time_pts) - 1),leave=False)
         T = sde.T()
         for i in pbar:
@@ -46,7 +55,7 @@ def get_euler_maruyama(num_samples, sde, model, dim, device):
 
             x_t += tot_drift * dt + diffusion * torch.randn_like(x_t) * torch.abs(dt) ** 0.5
             
-            # plot_trajectory(x_t, i, t)
+            # plot_trajectory(x_t, i, time_pts[i])
         pbar.close()
         return x_t
 
