@@ -126,9 +126,11 @@ class VariationaLinearlDrift(nn.Module):
   def __init__(self,dim):
     super().__init__()
     self.dim = dim
-    self.A = nn.Linear(1,dim * dim,bias=False)
+    self.A = nn.Linear(1,dim * dim)
     self.register_buffer('identity',torch.eye(dim).unsqueeze(0))
     torch.nn.init.constant_(self.A.weight,0)
+    torch.nn.init.constant_(self.A.bias,0)
+    
   
   def forward(self, t):
     return self.identity - 2 * self.A(t).reshape(-1, self.dim, self.dim) 
@@ -152,36 +154,36 @@ class LinearSchrodingerBridge(SDE):
     return self.beta_min + (self.beta_max - self.beta_min) * t 
   
   def beta_int(self, t):
-    return (self.beta_min * t + (self.beta_max - self.beta_min) * t**2/2)/2
+    return self.beta_min * t + (self.beta_max - self.beta_min) * t**2/2
   
   def int_beta_ds(self, t):
-    num_pts = 100
+    # TODO : Use a better integrator than Eulers
+    num_pts = 1000
     t_shape = t.unsqueeze(-1).expand(-1,num_pts,-1)
     dt = t/num_pts
     time_pts = torch.arange(num_pts,device=t.device).unsqueeze(-1) * t_shape/num_pts
     Ats = self.A(time_pts.view(-1,1))
     Ats = Ats.view(-1,num_pts, Ats.shape[-1], Ats.shape[-1])
     betas = self.beta(time_pts).unsqueeze(-1)
-    return -.5 * torch.sum(betas * Ats,dim=1) * dt.unsqueeze(-1)
+    return torch.sum(betas * Ats,dim=1) * dt.unsqueeze(-1)
   
   def exp_int(self, t):
-    mat = self.int_beta_ds(t)
+    mat = -.5 * self.int_beta_ds(t)
     return mat.matrix_exp()
   
   def compute_variance(self, t):
-    exp = self.exp_int(t)
-    dim = exp.shape[-1]
-    C_H_power = torch.zeros((t.shape[0], 2 * dim, 2 * dim),device=exp.device)
+    int_mat = self.int_beta_ds(t)
+    dim = int_mat.shape[-1]
+    C_H_power = torch.zeros((t.shape[0], 2 * dim, 2 * dim),device=int_mat.device)
     C_H_pair = torch.zeros_like(C_H_power)
     
     for i in range(t.shape[0]):
-      C_H_power[i] = torch.block_diag(exp[i], -exp[i].T)
-      C_H_power[i, :dim, dim:] = self.beta_int(t[i]) * torch.eye(dim,device=exp.device).unsqueeze(0)
-      C_H_pair[i] = torch.linalg.matrix_exp(C_H_power[i] * t[i])
+      C_H_power[i] = torch.block_diag(-.5 * int_mat[i], .5 * int_mat[i].T)
+      C_H_power[i, :dim, dim:] = self.beta_int(t[i]) * torch.eye(dim,device=int_mat.device).unsqueeze(0)
+      C_H_pair[i] = torch.linalg.matrix_exp(C_H_power[i])
 
-    Initial_Matrix = torch.cat((torch.zeros((dim,dim), device=exp.device), torch.eye(dim,device=exp.device)), dim=0)
-
-    C_H = torch.einsum('tij,jk->tik', C_H_pair, Initial_Matrix)
+    initial_cond = torch.cat((torch.zeros((dim,dim), device=int_mat.device), torch.eye(dim,device=int_mat.device)), dim=0)
+    C_H = torch.einsum('tij,jk->tik', C_H_pair, initial_cond)
     C = C_H[:, : dim, :]
     H = C_H[:, dim: ,  :]
     cov = torch.einsum('tij,tjk->tik', C, torch.linalg.inv(H))
