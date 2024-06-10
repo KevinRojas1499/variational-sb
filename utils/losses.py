@@ -1,6 +1,8 @@
 import torch
 import utils.sde_lib as SDEs
 
+from utils.misc import batch_matrix_product
+
 def dsm_loss(sde : SDEs.SDE,data, model):
     eps = sde.delta
     times = (torch.rand((data.shape[0]),device=data.device) * (1-eps) + eps) * sde.T()
@@ -19,9 +21,8 @@ def sb_loss(sde : SDEs.SDE,data, model):
     shaped_t = times.reshape(-1,1,1,1) if len(data.shape) > 2 else times.reshape(-1,1)
     mean, L, invL = sde.marginal_prob(data,shaped_t)
     noise = torch.randn_like(mean,device=data.device)
-    
-    perturbed_data = mean + torch.bmm(L, noise.unsqueeze(-1)).squeeze(-1)
-    flatten_error = ((-torch.bmm(invL.mT, noise.unsqueeze(-1)).squeeze(-1) + model(perturbed_data,times))**2).view(data.shape[0],-1)
+    perturbed_data = mean + batch_matrix_product(L, noise) 
+    flatten_error = ((batch_matrix_product(invL.mT, noise) + model(perturbed_data,times))**2).view(data.shape[0],-1)
     
     return torch.mean(torch.sum(flatten_error,dim=1))
 

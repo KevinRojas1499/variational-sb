@@ -5,6 +5,8 @@ import utils.diff as diff
 import utils.shape_utils as shape_utils
 import torch.nn as nn
 
+from utils.misc import batch_matrix_product
+
 class SDE(abc.ABC):
   """SDE abstract class. Functions are designed for a mini-batch of inputs."""
 
@@ -200,10 +202,10 @@ class LinearSchrodingerBridge(SDE):
     # And similarly for other shapes
     big_beta = self.exp_int(t)
     cov, L, invL = self.compute_variance(t)
-    return torch.bmm(big_beta, x.unsqueeze(-1)).squeeze(-1), L, invL
+    return batch_matrix_product(big_beta, x), L, invL
   
   def drift(self, x,t):
-    return - .5 * self.beta(t) * torch.bmm(self.A(t), x.unsqueeze(-1)).squeeze(-1) 
+    return - .5 * self.beta(t) * batch_matrix_product(self.A(t), x) 
   
   def diffusion(self, x,t):
     return self.beta(t)**.5

@@ -3,4 +3,4 @@
 /wandb/
 *.jpeg
 *.png
-
+*.pyc

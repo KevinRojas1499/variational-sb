@@ -36,6 +36,8 @@ def training(**opts):
     dim = dataset.dim
     sde = utils.sde_lib.VP() if opts.sde == 'vp' else utils.sde_lib.LinearSchrodingerBridge(dim, device, beta_max=4,)
     model = utils.models.MLP(dim=dim,augmented_sde=False).to(device=device)
+    if opts.sde == 'sb':
+        model = utils.models.SB_Preconditioning(model,sde)
     opt = torch.optim.Adam(model.parameters(),lr=opts.lr)
 
     num_iters = 30000

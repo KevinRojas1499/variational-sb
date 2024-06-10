@@ -1,6 +1,9 @@
 import torch
 import torch.nn as nn
 
+from utils.sde_lib import LinearSchrodingerBridge
+from utils.misc import batch_matrix_product
+
 class MLP(nn.Module):
     def __init__(self, dim, augmented_sde) -> None:
         super().__init__()
@@ -22,3 +25,19 @@ class MLP(nn.Module):
         h = torch.cat([x, t.reshape(-1, 1)], dim=1)
         
         return self.sequential(h)
+    
+class SB_Preconditioning(nn.Module):
+    def __init__(self, model, sde : LinearSchrodingerBridge) -> None:
+        super().__init__()
+        self.model = model
+        self.sde = sde
+    
+    def forward(self, x, t):
+        t_shape = t.reshape(-1,1)
+        matrix = -.5 * self.sde.int_beta_ds(t_shape)
+        exp = matrix.matrix_exp()
+        inv = (-matrix).matrix_exp()
+        
+        denoiser = self.model(batch_matrix_product(inv,x),t_shape)
+        return batch_matrix_product(exp, denoiser) - x
+    
