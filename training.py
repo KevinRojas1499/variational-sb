@@ -37,7 +37,7 @@ def training(**opts):
     sde = utils.sde_lib.VP() if opts.sde == 'vp' else utils.sde_lib.LinearSchrodingerBridge(dim, device)
     model = utils.models.MLP(dim=dim,augmented_sde=False).to(device=device)
     if opts.sde == 'sb':
-        score_model = utils.models.SB_Preconditioning(model,sde)
+        model = utils.models.SB_Preconditioning(model,sde)
     opt = torch.optim.Adam(model.parameters(),lr=opts.lr)
 
     num_iters = 30000
@@ -45,7 +45,7 @@ def training(**opts):
     log_sample_quality=opts.log_rate
     data = dataset.sample(1000)
 
-    loss_fn = losses.dsm_loss if opts.sde == 'vp' else losses.sb_loss
+    loss_fn = losses.dsm_loss if opts.sde == 'vp' else losses.naive_sb_loss
     init_wandb(opts)
     for i in tqdm(range(num_iters)):
         data = dataset.sample(batch_size).to(device=device)
@@ -58,7 +58,7 @@ def training(**opts):
         })
         # Evaluate sample accuracy
         if i%log_sample_quality == 0:
-            new_data = utils.samplers.get_euler_maruyama(1000,sde,score_model,dim,device)
+            new_data = utils.samplers.get_euler_maruyama(1000,sde,model,dim,device)
             fig = go.Figure()
             if dim == 1:
                 fig.add_trace(go.Histogram(x=new_data[:,0].cpu().detach(),

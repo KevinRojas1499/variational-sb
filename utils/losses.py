@@ -31,12 +31,12 @@ def naive_sb_loss(sde : SDEs.SDE,data, model):
     eps = sde.delta
     times = (torch.rand((data.shape[0]),device=data.device) * (1-eps) + eps) * sde.T()
     shaped_t = times.reshape(-1,1,1,1) if len(data.shape) > 2 else times.reshape(-1,1)
-    mean, L, invL = sde.marginal_prob(data,shaped_t)
+    mean, L, invL, max_eig = sde.marginal_prob(data,shaped_t)
     noise = torch.randn_like(mean,device=data.device)
     perturbed_data = mean + batch_matrix_product(L, noise) 
     flatten_error = ((batch_matrix_product(invL.mT, noise) + model(perturbed_data,times))**2).view(data.shape[0],-1)
     
-    return torch.mean(torch.sum(flatten_error,dim=1))
+    return torch.mean(max_eig * torch.sum(flatten_error,dim=1))
 
 def cld_loss(sde : SDEs.CLD,data, model):
     eps = sde.delta

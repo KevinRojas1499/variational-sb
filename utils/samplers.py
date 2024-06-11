@@ -5,9 +5,8 @@ from utils.models import MLP
 from utils.sde_lib import SDE, CLD
 
 def plot_trajectory(x_t, i, t):
-    lim = 10
-    plt.xlim([-lim,lim])
-    plt.ylim([-lim,lim])
+    plt.xlim([-5,5])
+    plt.ylim([-40,40])
     plt.scatter(x_t[:,0].cpu(), x_t[:,1].cpu(),s=2)
     plt.savefig(f'./trajectory/{i}_{t.item() : .3f}.png')
     plt.close()

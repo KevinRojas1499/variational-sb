@@ -113,12 +113,14 @@ class VariationaLinearlDrift(nn.Module):
     self.dim = dim
     self.A = nn.Linear(1,dim * dim)
     self.register_buffer('identity',torch.eye(dim).unsqueeze(0))
+    # torch.nn.init.xavier_uniform_(self.A.weight)
     torch.nn.init.constant_(self.A.weight,0)
-    torch.nn.init.constant_(self.A.bias,0)
-    
+    # torch.nn.init.constant_(self.A.bias,0)
+    print(self.A.bias.view(dim,dim))
   
   def forward(self, t):
-    return self.identity - 2 * self.A(t).reshape(-1, self.dim, self.dim) 
+    mat = self.A(t).reshape(-1, self.dim, self.dim) 
+    return self.identity - 2 * (mat + mat.mT)
 
 class LinearSchrodingerBridge(SDE):
 
@@ -142,36 +144,37 @@ class LinearSchrodingerBridge(SDE):
     return self.beta_min * t + (self.beta_max - self.beta_min) * t**2/2
   
   def int_beta_ds(self, t):
-    # TODO : Use a better integrator than Eulers
+    # Curently using Simpsons Method
     num_pts = 1000
     t_shape = t.unsqueeze(-1).expand(-1,num_pts,-1)
     dt = t/num_pts
     time_pts = torch.arange(num_pts,device=t.device).unsqueeze(-1) * t_shape/num_pts
+    multipliers = torch.ones(num_pts, device=t.device)
+    multipliers[1:-1:2] = 4
+    multipliers[2:-1:2] = 2
+    multipliers = multipliers.view(1,-1,1,1)
     Ats = self.A(time_pts.view(-1,1))
     Ats = Ats.view(-1,num_pts, Ats.shape[-1], Ats.shape[-1])
     betas = self.beta(time_pts).unsqueeze(-1)
-    return torch.sum(betas * Ats,dim=1) * dt.unsqueeze(-1)
-  
-  
+    return torch.sum(betas * Ats * multipliers,dim=1) * dt.unsqueeze(-1)/3
+
   def compute_variance(self, t):
     int_mat = self.int_beta_ds(t)
     dim = int_mat.shape[-1]
-    C_H_power = torch.zeros((t.shape[0], 2 * dim, 2 * dim),device=int_mat.device)
-    C_H_pair = torch.zeros_like(C_H_power)
-    C_H_power[:,:dim, :dim] = -.5 * int_mat
-    C_H_power[:,-dim:, -dim:] = .5 * int_mat
-    C_H_power[:, :dim, dim:] = self.beta_int(t).view(-1,1,1) * torch.eye(dim,device=int_mat.device).unsqueeze(0).expand(t.shape[0],-1,-1)
+    ch_power = torch.zeros((t.shape[0], 2 * dim, 2 * dim),device=int_mat.device)
+    ch_power[:,:dim, :dim] = -.5 * int_mat
+    ch_power[:,dim:, dim:] = .5 * int_mat.mT
+    ch_power[:, :dim, dim:] = self.beta_int(t).view(-1,1,1) * torch.eye(dim,device=int_mat.device).unsqueeze(0).expand(t.shape[0],-1,-1)
 
-    C_H_pair = torch.linalg.matrix_exp(C_H_power)
-
-    initial_cond = torch.cat((torch.zeros((dim,dim), device=int_mat.device), torch.eye(dim,device=int_mat.device)), dim=0)
-    C_H = torch.einsum('tij,jk->tik', C_H_pair, initial_cond)
-    C = C_H[:, : dim, :]
-    H = C_H[:, dim: ,  :]
-    cov = torch.einsum('tij,tjk->tik', C, torch.linalg.inv(H))
-    L = torch.linalg.cholesky(cov)
-    invL = torch.linalg.inv(L.mH)
-    return cov, L, invL
+    ch_pair = torch.linalg.matrix_exp(ch_power)
+    C = ch_pair[:, :dim, dim:]
+    H_inv = ch_pair[:, :dim, :dim]
+    cov = C @ H_inv
+    diag, Q = torch.linalg.eigh(cov)
+    L = Q @ torch.diag_embed(diag.sqrt()) @ Q.mH
+    invL = Q @ torch.diag_embed(1/(diag.sqrt())) @ Q.mH
+    max_eig = diag[:,-1].unsqueeze(-1)
+    return cov, L, invL, max_eig
   
   def marginal_prob_std(self, t):
     return self.compute_variance(t)[1]
@@ -181,12 +184,12 @@ class LinearSchrodingerBridge(SDE):
     # then  t is of shape [B, 1, 1, 1] 
     # And similarly for other shapes
     big_beta = (-.5 * self.int_beta_ds(t)).matrix_exp()
-    cov, L, invL = self.compute_variance(t)
-    return batch_matrix_product(big_beta, x), L, invL
+    cov, L, invL, max_eig = self.compute_variance(t)
+    return batch_matrix_product(big_beta, x), L, invL, max_eig
   
   def unscaled_marginal_prob_std(self, t):
     mat = (.5 * self.int_beta_ds(t)).matrix_exp()
-    cov, L, invL = self.compute_variance(t)
+    cov, L, invL, _ = self.compute_variance(t)
     return mat @ L
   
   def drift(self, x,t):

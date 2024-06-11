@@ -13,11 +13,11 @@ class MLP(nn.Module):
             self.true_dim += self.dim
         self.sequential = nn.Sequential(
             nn.Linear(self.true_dim,128),
-            nn.ReLU(),
+            nn.Sigmoid(),
             nn.Linear(128,128),
-            nn.ReLU(),
+            nn.Sigmoid(),
             nn.Linear(128,128),
-            nn.ReLU(),
+            nn.SiLU(),
             nn.Linear(128,self.true_dim - 1)
         )
         
@@ -34,10 +34,19 @@ class SB_Preconditioning(nn.Module):
     
     def forward(self, x, t):
         t_shape = t.reshape(-1,1)
-        matrix = -.5 * self.sde.int_beta_ds(t_shape)
-        exp = matrix.matrix_exp()
-        inv = (-matrix).matrix_exp()
+
+        invL = self.sde.compute_variance(t_shape)[2]
         
-        denoiser = self.model(batch_matrix_product(inv,x),t_shape)
-        return batch_matrix_product(exp, denoiser) - x
+        denoiser = self.model(x,t_shape)
+        return -batch_matrix_product(invL.mT, denoiser)
+    
+        # t_shape = t.reshape(-1,1)
+        # matrix = -.5 * self.sde.int_beta_ds(t_shape)
+        # exp = matrix.matrix_exp()
+        # inv = (-matrix).matrix_exp()
+        
+        # invL = self.sde.compute_variance(t_shape)[2]
+        
+        # denoiser = self.model(batch_matrix_product(inv,x),t_shape)
+        # return batch_matrix_product(invL.mT, batch_matrix_product(exp, denoiser) - x)
     
