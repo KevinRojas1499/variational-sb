@@ -124,7 +124,7 @@ class VariationaLinearlDrift(nn.Module):
 
 class LinearSchrodingerBridge(SDE):
 
-  def __init__(self,dim, device, T=1.,delta=1e-3, beta_min=0.1, beta_max=20):
+  def __init__(self,dim, device, T=1.,delta=1e-3, beta_min=0.1, beta_max=5):
     # dX = - .5 (beta_min + beta_max * t) X_t dt + (...) dW
     super().__init__()
     self._T = T
@@ -138,10 +138,10 @@ class LinearSchrodingerBridge(SDE):
     return self._T
   
   def beta(self, t):
-    return self.beta_min + (self.beta_max - self.beta_min) * t 
+    return 2 * self.beta_max * t
   
   def beta_int(self, t):
-    return self.beta_min * t + (self.beta_max - self.beta_min) * t**2/2
+    return self.beta_max * t**2
   
   def int_beta_ds(self, t):
     # Curently using Simpsons Method
@@ -160,12 +160,13 @@ class LinearSchrodingerBridge(SDE):
 
   def compute_variance(self, t):
     int_mat = self.int_beta_ds(t)
+    # beta_integral = self.beta_int(t)
+    # int_mat = self.A(t) * beta_integral.view(-1,1,1)
     dim = int_mat.shape[-1]
     ch_power = torch.zeros((t.shape[0], 2 * dim, 2 * dim),device=int_mat.device)
     ch_power[:,:dim, :dim] = -.5 * int_mat
     ch_power[:,dim:, dim:] = .5 * int_mat.mT
     ch_power[:, :dim, dim:] = self.beta_int(t).view(-1,1,1) * torch.eye(dim,device=int_mat.device).unsqueeze(0).expand(t.shape[0],-1,-1)
-
     ch_pair = torch.linalg.matrix_exp(ch_power)
     C = ch_pair[:, :dim, dim:]
     H_inv = ch_pair[:, :dim, :dim]

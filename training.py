@@ -29,6 +29,7 @@ def init_wandb(opts):
 @click.option('--lr', type=float, default=3e-4)
 @click.option('--batch_size', type=int, default=512)
 @click.option('--log_rate',type=int,default=5000)
+@click.option('--num_iters',type=int,default=30000)
 def training(**opts):
     opts = dotdict(opts)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -36,11 +37,11 @@ def training(**opts):
     dim = dataset.dim
     sde = utils.sde_lib.VP() if opts.sde == 'vp' else utils.sde_lib.LinearSchrodingerBridge(dim, device)
     model = utils.models.MLP(dim=dim,augmented_sde=False).to(device=device)
-    if opts.sde == 'sb':
-        model = utils.models.SB_Preconditioning(model,sde)
+    # if opts.sde == 'sb':
+    #     model = utils.models.SB_Preconditioning(model,sde)
     opt = torch.optim.Adam(model.parameters(),lr=opts.lr)
 
-    num_iters = 30000
+    num_iters = opts.num_iters
     batch_size = opts.batch_size
     log_sample_quality=opts.log_rate
     data = dataset.sample(1000)

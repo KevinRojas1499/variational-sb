@@ -15,7 +15,7 @@ class MLP(nn.Module):
             nn.Linear(self.true_dim,128),
             nn.Sigmoid(),
             nn.Linear(128,128),
-            nn.Sigmoid(),
+            nn.ReLU(),
             nn.Linear(128,128),
             nn.SiLU(),
             nn.Linear(128,self.true_dim - 1)

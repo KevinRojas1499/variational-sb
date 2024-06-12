@@ -36,7 +36,7 @@ def naive_sb_loss(sde : SDEs.SDE,data, model):
     perturbed_data = mean + batch_matrix_product(L, noise) 
     flatten_error = ((batch_matrix_product(invL.mT, noise) + model(perturbed_data,times))**2).view(data.shape[0],-1)
     
-    return torch.mean(max_eig * torch.sum(flatten_error,dim=1))
+    return torch.mean(torch.sum(flatten_error,dim=1))
 
 def cld_loss(sde : SDEs.CLD,data, model):
     eps = sde.delta
