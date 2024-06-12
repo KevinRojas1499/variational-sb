@@ -32,13 +32,13 @@ print("VARIANCE EXPLODING")
 dim = 2
 sde = LinearSchrodingerBridge(dim, device=device, T=.5)
 t = torch.linspace(0.1,.8,5,device=device).unsqueeze(-1)
-sde.A.A.bias.data.copy_(torch.eye(dim).view(-1) * 1/2)
+sde.D.A.bias.data.copy_(torch.eye(dim).view(-1) * 1/2)
 
 
-print(sde.A.A.weight.view(dim,dim))
-print(sde.A.A.bias.data.view(dim,dim))
+print(sde.D.A.weight.view(dim,dim))
+print(sde.D.A.bias.data.view(dim,dim))
 
-print(sde.A(t))
+print(sde.D(t))
 
 print(sde.beta_int(t))
 print(sde.compute_variance(t)[0])

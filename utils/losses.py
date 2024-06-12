@@ -14,8 +14,16 @@ def dsm_loss(sde : SDEs.SDE,data, model):
     
     return torch.mean(torch.sum(flatten_error,dim=1))
 
+def standard_sb_loss(sde : SDEs.LinearSchrodingerBridge, data, model):
+    eps = sde.delta
 
-def sb_loss(sde : SDEs.LinearSchrodingerBridge,data, model):
+    n_times = 30
+    time_pts = torch.linspace(eps, sde.T(),n_times, device=data.device)
+
+    return sde.eval_sb_loss(data,time_pts,model)
+    
+
+def denoising_sb_loss(sde : SDEs.LinearSchrodingerBridge,data, model):
     # This one assumes that we are parametrizing a denoiser
     eps = sde.delta
     times = (torch.rand((data.shape[0]),device=data.device) * (1-eps) + eps) * sde.T()

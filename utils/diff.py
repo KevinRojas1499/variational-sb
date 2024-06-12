@@ -30,20 +30,8 @@ def partial_t_j(f, x, t, j):
                    allow_unused=False)[0]  # shape [B, N]
     return dy_j_dx
 
-def batch_div_exact_1(f, x, t):
-    x.requires_grad = True
-    def batch_jacobian():
-        f_sum = lambda x: torch.sum(f(x, t), axis=0)
-        jacobian = torch.autograd.functional.jacobian(f_sum, x, create_graph=True, strict=True)
-        return jacobian.permute(1,0,2) 
-    jac = batch_jacobian()
-    return torch.sum(jac.diagonal(offset=0, dim1=-1, dim2=-2), dim=-1, keepdim=True)
-       
-
-
-def batch_div_exact_2(func,x,t):
+def batch_div_exact(f,x,t):
     div = 0
-    f = func(x,t)
     for i in range(x.shape[-1]):
         div += torch.autograd.grad(f[:,i].sum(),x,
                                    create_graph=True,

@@ -2,7 +2,9 @@
 import abc
 import torch
 import torch.nn as nn
+from math import pi, log
 
+from utils.diff import batch_div_exact
 from utils.misc import batch_matrix_product
 
 class SDE(abc.ABC):
@@ -113,8 +115,8 @@ class VariationaLinearlDrift(nn.Module):
     self.dim = dim
     self.A = nn.Linear(1,dim * dim)
     self.register_buffer('identity',torch.eye(dim).unsqueeze(0))
-    # torch.nn.init.xavier_uniform_(self.A.weight)
-    torch.nn.init.constant_(self.A.weight,0)
+    # 0 Initialization is important so that it pushes to a standard normal
+    # torch.nn.init.constant_(self.A.weight,0)
     # torch.nn.init.constant_(self.A.bias,0)
     print(self.A.bias.view(dim,dim))
   
@@ -123,7 +125,10 @@ class VariationaLinearlDrift(nn.Module):
     return self.identity - 2 * (mat + mat.mT)
 
 class LinearSchrodingerBridge(SDE):
-
+  """ 
+    Note that this is not a general SB, it is implemented so that after optimized
+    the linear drift transports to a standard normal
+  """
   def __init__(self,dim, device, T=1.,delta=1e-3, beta_min=0.1, beta_max=5):
     # dX = - .5 (beta_min + beta_max * t) X_t dt + (...) dW
     super().__init__()
@@ -131,8 +136,8 @@ class LinearSchrodingerBridge(SDE):
     self.delta = delta
     self.beta_min = beta_min
     self.beta_max = beta_max
-    
-    self.A = VariationaLinearlDrift(dim).requires_grad_(False).to(device=device)
+    self.D = VariationaLinearlDrift(dim).to(device=device).requires_grad_(True)
+    self.dim = self.D.dim
 
   def T(self):
     return self._T
@@ -153,7 +158,7 @@ class LinearSchrodingerBridge(SDE):
     multipliers[1:-1:2] = 4
     multipliers[2:-1:2] = 2
     multipliers = multipliers.view(1,-1,1,1)
-    Ats = self.A(time_pts.view(-1,1))
+    Ats = self.D(time_pts.view(-1,1))
     Ats = Ats.view(-1,num_pts, Ats.shape[-1], Ats.shape[-1])
     betas = self.beta(time_pts).unsqueeze(-1)
     return torch.sum(betas * Ats * multipliers,dim=1) * dt.unsqueeze(-1)/3
@@ -194,7 +199,7 @@ class LinearSchrodingerBridge(SDE):
     return mat @ L
   
   def drift(self, x,t):
-    return - .5 * self.beta(t) * batch_matrix_product(self.A(t), x) 
+    return - .5 * self.beta(t) * batch_matrix_product(self.D(t), x) 
   
   def diffusion(self, x,t):
     return self.beta(t)**.5
@@ -220,7 +225,36 @@ class LinearSchrodingerBridge(SDE):
     t_steps = torch.flip(t_steps,dims=(0,))
     return t_steps.to(dtype=torch.float)
   
+  def eval_sb_loss(self, in_cond, time_pts, model):
+    n_time_pts = time_pts.shape[0]
+    # trajectories = torch.empty((in_cond.shape[0], n_time_pts, *in_cond.shape[1:]),device=in_cond.device) 
+    # scores = torch.empty_like(trajectories)
+    
+    xt = in_cond.detach().clone().requires_grad_(True)
+    loss = 0
+    for i, t in enumerate(time_pts):
+      if i == n_time_pts - 1:
+        break
+      dt = time_pts[i+1] - t
+      diffusion = self.diffusion(xt,t)
+      xt = xt + diffusion * dt + torch.randn_like(xt) * self.diffusion(xt,t) * dt.abs().sqrt()
+      # trajectories[:,i] = xt
+      # We have to compute this score by hand to recover the linearized part
+      # scores[:,i] = diffusion -  (- .5 * self.beta(t) * xt)
+      forward_score = diffusion -  (- .5 * self.beta(t) * xt)
+      # Now we compare against the backwards process
+      t_shape = t.unsqueeze(-1).expand(xt.shape[0],1)
+      backward_score = model(xt,self.T() - t_shape)
+      
+      div_term = self.beta(t) * (batch_div_exact(backward_score.view(-1,xt.shape[-1]),xt,t_shape) + self.dim) 
+      loss += torch.sum((.5 * self.beta(t_shape) * backward_score + forward_score)**2) \
+        + torch.mean(div_term)
+    loss = dt * loss
+    loss += .5 * torch.mean(torch.sum(xt**2,dim=-1))  + .5 * self.dim * log(2*pi)
+    return loss
+  
   def prior_sampling(self, shape, device):
+    return torch.randn(*shape, dtype=torch.float, device=device)
     L = self.compute_variance(torch.tensor([[self.T()]],device=device))[1][0]
     return (L @ torch.randn(*shape, dtype=torch.float, device=device).T).T
 
