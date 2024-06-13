@@ -5,7 +5,7 @@ import torch.nn as nn
 from math import pi, log
 
 import matplotlib.pyplot as plt
-from utils.diff import batch_div_exact
+from utils.diff import batch_div_exact, hutch_div
 from utils.misc import batch_matrix_product
 
 class SDE(abc.ABC):
@@ -306,7 +306,9 @@ class SchrodingerBridge():
       bt = self.beta(t)
       forward_score = bt * self.forward_score(xt,t_shape) # beta * fw_score
       backward_score = bt * self.backward_score(xt,t_shape) # beta * bw_score
-      div_term = bt * batch_div_exact(backward_score.view(-1,xt.shape[-1]),xt,t_shape) + .5 * d * bt 
+      # div_term = bt * batch_div_exact(backward_score.view(-1,xt.shape[-1]),xt,t_shape) + .5 * d * bt 
+      div_term = bt * hutch_div(backward_score.view(-1,xt.shape[-1]),xt,t_shape) + .5 * d * bt 
+      
       loss += .5 * torch.mean(torch.sum((backward_score + forward_score)**2,dim=-1)) \
         + torch.mean(div_term)
         

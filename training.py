@@ -35,8 +35,12 @@ def training(**opts):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     dataset = get_dataset(opts)
     dim = dataset.dim
-    model_backward = utils.models.MLP(dim=dim,augmented_sde=False).to(device=device)
-    model_forward = utils.models.MLP(dim=dim,augmented_sde=False).to(device=device)
+    # model_backward = utils.models.MLP(dim=dim,augmented_sde=False).to(device=device)
+    # model_forward = utils.models.MLP(dim=dim,augmented_sde=False).to(device=device)
+    model_backward = utils.models.ToyPolicy().to(device=device)
+    model_forward = utils.models.ToyPolicy().to(device=device)
+    
+    
     sde = utils.sde_lib.VP() if opts.sde == 'vp' else utils.sde_lib.SchrodingerBridge(model_forward,model_backward)
     
     # if opts.sde == 'sb':

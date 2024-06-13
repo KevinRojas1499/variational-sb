@@ -38,16 +38,20 @@ def batch_div_exact(f,x,t):
                                    allow_unused=True,
                                    retain_graph=True)[0][:,i:i+1]
     return div
-    
-def hutch_div(score_model, sample, time_steps):
-    """Compute the divergence of the score-based model with Skilling-Hutchinson."""
+
+def hutch_div(score_model, sample, time_steps, already_evaluated=True):
+    """Compute the divergence of the score-based model with Skilling-Hutchinson.
+        The already evaluated parameter should be switched to False when the
+        score_model is a function of (sample,time_steps) instead of the output of that fn
+    """
     with torch.enable_grad():
         sample.requires_grad_(True)
         repeat = 1
         divs = torch.zeros((sample.shape[0],), device=sample.device, requires_grad=False) #div: [B,]
         for _ in range(repeat):
             epsilon = torch.randn_like(sample)
-            score_e = torch.sum(score_model(sample, time_steps) * epsilon)
+            s = score_model if already_evaluated else score_model(sample, time_steps)
+            score_e = torch.sum(s * epsilon)
             grad_score_e = torch.autograd.grad(score_e, sample,
                                                 retain_graph=True,
                                                 create_graph=True,
