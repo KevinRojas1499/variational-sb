@@ -284,10 +284,11 @@ class SchrodingerBridge():
     return self.beta_max * t**2
   
   def drift(self, x,t, forward=True):
+    beta = self.beta(t)
     if forward:
-      return -.5 * self.beta(t) * x + self.beta(t) * self.forward_score(x,t)
+      return -.5 * beta * x + beta * self.forward_score(x,t)
     else:
-      return -.5 * self.beta(t) * x - self.beta(t) * self.backward_score(x,t)
+      return -.5 * beta * x - beta * self.backward_score(x,t)
   
   def diffusion(self, x,t):
     return self.beta(t)**.5
@@ -324,6 +325,7 @@ class SchrodingerBridge():
     return torch.randn(*shape, dtype=torch.float, device=device)
 
   def sample(self, shape, device, backward=True):
+    with torch.no_grad():
       xt = self.prior_sampling(shape,device)
       time_pts = torch.linspace(0., self.T(), 100, device=device)
       for i, t in enumerate(time_pts):
@@ -333,7 +335,10 @@ class SchrodingerBridge():
         dt = -dt if backward else dt 
         t_shape = t.unsqueeze(-1).expand(xt.shape[0],1)
         drift = self.drift(xt,self.T() - t_shape, forward=(not backward))
+        # Predictor step
         xt = xt + drift * dt + torch.randn_like(xt) * self.diffusion(xt,t) * dt.abs().sqrt()
+        # Corrector step
+        # xt = xt + (self.forward_score(xt,time_pts[i+1]) + self.forward_score(xt,time_pts[i+1]))
       return xt
 class CLD(SDE):
   # We assume that images have shape [B, C, H, W] 

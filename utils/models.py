@@ -16,9 +16,11 @@ class MLP(nn.Module):
         self.sequential = nn.Sequential(
             nn.Linear(self.true_dim,128),
             nn.Sigmoid(),
-            nn.Linear(128,128),
+            nn.Linear(128,256),
             nn.ReLU(),
-            nn.Linear(128,128),
+            nn.Linear(256,256),
+            nn.SiLU(),
+            nn.Linear(256,128),
             nn.SiLU(),
             nn.Linear(128,self.true_dim - 1)
         )
@@ -120,7 +122,7 @@ class ResNet_FC(nn.Module):
         return h
     
 class ToyPolicy(torch.nn.Module):
-    def __init__(self, data_dim=2, hidden_dim=128, time_embed_dim=128):
+    def __init__(self, data_dim=2, hidden_dim=256, time_embed_dim=128):
         super(ToyPolicy,self).__init__()
 
         self.time_embed_dim = time_embed_dim
