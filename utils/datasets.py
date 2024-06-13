@@ -104,7 +104,7 @@ def get_dataset(opts):
     if opts.dataset == 'gmm':
          return get_gmm(2, None, device='cuda')
     elif opts.dataset == 'spiral':
-        return Spiral(y_scalar=8)
+        return Spiral()
     elif opts.dataset == 'checkerboard':
         return CheckerBoard()
     else:
@@ -113,11 +113,17 @@ def get_dataset(opts):
 def get_gmm(dim, sde, device):
     if dim == 2:
         return GMM(
-            torch.tensor([.2,.8],device=device),
-            torch.tensor([[-5.,-5.],[5.,5.]],device=device),
-            torch.tensor([[[1., 0],[0,1.]], [[1., 0],[0,1.]]],device=device),
+            torch.tensor([.33,.33, .33],device=device),
+            torch.tensor([[-5.,-5.],[5.,5.],[-5,8.]],device=device),
+            torch.tensor([[[1., -.3],[-.3,1.]], [[1., .5],[.5,1.]],[[1., 0],[0,1.]]],device=device),
             sde
         )
+        # return GMM(
+        #     torch.tensor([.5,.5],device=device),
+        #     torch.tensor([[-5.,-5.],[5.,5.]],device=device),
+        #     torch.tensor([[[1., 0],[0,1.]], [[1., 0],[0,1.]]],device=device),
+        #     sde
+        # )
     elif dim == 1:
        return GMM(
             torch.tensor([.2,.8],device=device),

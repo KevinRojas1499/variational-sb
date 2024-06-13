@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 from math import pi, log
 
+import matplotlib.pyplot as plt
 from utils.diff import batch_div_exact
 from utils.misc import batch_matrix_product
 
@@ -229,19 +230,18 @@ class LinearSchrodingerBridge(SDE):
     n_time_pts = time_pts.shape[0]
     # trajectories = torch.empty((in_cond.shape[0], n_time_pts, *in_cond.shape[1:]),device=in_cond.device) 
     # scores = torch.empty_like(trajectories)
-    
     xt = in_cond.detach().clone().requires_grad_(True)
     loss = 0
     for i, t in enumerate(time_pts):
       if i == n_time_pts - 1:
         break
       dt = time_pts[i+1] - t
-      diffusion = self.diffusion(xt,t)
-      xt = xt + diffusion * dt + torch.randn_like(xt) * self.diffusion(xt,t) * dt.abs().sqrt()
+      drift = self.drift(xt,t)
+      xt = xt + drift * dt + torch.randn_like(xt) * self.diffusion(xt,t) * dt.abs().sqrt()
       # trajectories[:,i] = xt
       # We have to compute this score by hand to recover the linearized part
       # scores[:,i] = diffusion -  (- .5 * self.beta(t) * xt)
-      forward_score = diffusion -  (- .5 * self.beta(t) * xt)
+      forward_score = drift -  (- .5 * self.beta(t) * xt)
       # Now we compare against the backwards process
       t_shape = t.unsqueeze(-1).expand(xt.shape[0],1)
       backward_score = model(xt,self.T() - t_shape)
@@ -259,7 +259,80 @@ class LinearSchrodingerBridge(SDE):
     return (L @ torch.randn(*shape, dtype=torch.float, device=device).T).T
 
 
+class SchrodingerBridge():
+  """ 
+    Note that this is not a general SB, it is implemented so that after optimized
+    the linear drift transports to a standard normal
+  """
+  def __init__(self, forward_score, backward_score, T=1.,delta=1e-3, beta_min=0.1, beta_max=1):
+    # dX = - .5 (beta_min + beta_max * t) X_t dt + (...) dW
+    super().__init__()
+    self._T = T
+    self.delta = delta
+    self.beta_min = beta_min
+    self.beta_max = beta_max
+    self.forward_score = forward_score
+    self.backward_score = backward_score
+
+  def T(self):
+    return self._T
+  
+  def beta(self, t):
+    return 2 * self.beta_max * t
+  
+  def beta_int(self, t):
+    return self.beta_max * t**2
+  
+  def drift(self, x,t, forward=True):
+    if forward:
+      return -.5 * self.beta(t) * x + self.beta(t) * self.forward_score(x,t)
+    else:
+      return -.5 * self.beta(t) * x - self.beta(t) * self.backward_score(x,t)
+  
+  def diffusion(self, x,t):
+    return self.beta(t)**.5
+  
+  def eval_sb_loss(self, in_cond, time_pts):
+    n_time_pts = time_pts.shape[0]
     
+    xt = in_cond.detach().clone().requires_grad_(True)
+    d = xt.shape[-1]
+    loss = 0
+    for i, t in enumerate(time_pts):
+      if i == n_time_pts - 1:
+        break
+      t_shape = t.unsqueeze(-1).expand(xt.shape[0],1)
+      
+      bt = self.beta(t)
+      forward_score = bt * self.forward_score(xt,t_shape) # beta * fw_score
+      backward_score = bt * self.backward_score(xt,t_shape) # beta * bw_score
+      div_term = bt * batch_div_exact(backward_score.view(-1,xt.shape[-1]),xt,t_shape) + .5 * d * bt 
+      loss += .5 * torch.mean(torch.sum((backward_score + forward_score)**2,dim=-1)) \
+        + torch.mean(div_term)
+        
+      # First we compute everything, we then take an euler step
+      dt = time_pts[i+1] - t
+      xt = xt + (-.5 * bt * xt + forward_score) * dt + torch.randn_like(xt) * self.diffusion(xt,t) * dt.abs().sqrt()
+        
+    loss = dt * loss
+    loss += .5 * torch.mean(torch.sum(xt**2,dim=-1)) + .5 * d * log(2*pi)
+    return loss
+  
+  def prior_sampling(self, shape, device):
+    return torch.randn(*shape, dtype=torch.float, device=device)
+
+  def sample(self, shape, device, backward=True):
+      xt = self.prior_sampling(shape,device)
+      time_pts = torch.linspace(0., self.T(), 100, device=device)
+      for i, t in enumerate(time_pts):
+        if i == 99:
+          break
+        dt = time_pts[i+1] - t 
+        dt = -dt if backward else dt 
+        t_shape = t.unsqueeze(-1).expand(xt.shape[0],1)
+        drift = self.drift(xt,self.T() - t_shape, forward=(not backward))
+        xt = xt + drift * dt + torch.randn_like(xt) * self.diffusion(xt,t) * dt.abs().sqrt()
+      return xt
 class CLD(SDE):
   # We assume that images have shape [B, C, H, W] 
   # Additionally there has been added channels as momentum

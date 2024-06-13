@@ -41,7 +41,9 @@ def get_euler_maruyama(num_samples, sde, model, dim, device):
     with torch.no_grad():
         x_t = sde.prior_sampling((num_samples,dim),device=device)
 
-        time_pts = sde.time_steps(100, device)
+        # time_pts = sde.time_steps(100, device)
+        time_pts = torch.linspace(sde.delta,sde.T(),100, device=device)
+        
         pbar = tqdm(range(len(time_pts) - 1),leave=False)
         T = sde.T()
         for i in pbar:
@@ -50,7 +52,7 @@ def get_euler_maruyama(num_samples, sde, model, dim, device):
             score = model(x_t, T- t)
             diffusion = sde.diffusion(x_t,T - t)
             tot_drift = - sde.drift(x_t,T - t) + diffusion**2 * score
-            # euler-maruyama step    print(samples.shape)
+            # euler-maruyama step 
 
             x_t += tot_drift * dt + diffusion * torch.randn_like(x_t) * torch.abs(dt) ** 0.5
             
