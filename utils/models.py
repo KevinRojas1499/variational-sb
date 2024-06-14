@@ -160,7 +160,7 @@ class ToyPolicy(torch.nn.Module):
         if len(t.shape)==0:
             t=t[None]
         elif len(t.shape) == 2:
-            t=t[0]
+            t=t.flatten()
             
         t_emb = timestep_embedding(t, self.time_embed_dim)
         t_out = self.t_module(t_emb)

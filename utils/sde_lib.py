@@ -320,11 +320,15 @@ class SchrodingerBridge():
     return x
   
   def eval_sb_loss(self, in_cond, time_pts):
+    # We assume that time_pts is a discretization of the interval [0,T]
     n_time_pts = time_pts.shape[0]
     
     xt = in_cond.detach().clone().requires_grad_(True)
     d = xt.shape[-1]
     loss = 0
+    trajectories = torch.empty((in_cond.shape[0], n_time_pts-1, *in_cond.shape[1:]),device=in_cond.device) 
+    forward_scores = torch.empty_like(trajectories)
+
     for i, t in enumerate(time_pts):
       if i == n_time_pts - 1:
         break
@@ -332,19 +336,26 @@ class SchrodingerBridge():
       
       bt = self.beta(t)
       forward_score = bt * self.forward_score(xt,t_shape) # beta * fw_score
-      backward_score = bt * self.backward_score(xt,t_shape) # beta * bw_score
-      # div_term = bt * batch_div_exact(backward_score.view(-1,xt.shape[-1]),xt,t_shape) + .5 * d * bt 
-      div_term = bt * hutch_div(backward_score.view(-1,xt.shape[-1]),xt,t_shape) + .5 * d * bt 
-      
-      loss += .5 * torch.mean(torch.sum((backward_score + forward_score)**2,dim=-1)) \
-        + torch.mean(div_term)
         
+      trajectories[:,i] = xt
+      forward_scores[:,i] = forward_score
+      
       # First we compute everything, we then take an euler step
       dt = time_pts[i+1] - t
       xt = xt + (-.5 * bt * xt + forward_score) * dt + torch.randn_like(xt) * self.diffusion(xt,t) * dt.abs().sqrt()
-        
+    
+    # We now compute the loss fn, we first need to do some reshaping
+    time_pts_shaped = time_pts[:-1].repeat(xt.shape[0])
+    bt = self.beta(time_pts_shaped)
+    flat_traj = trajectories.reshape(-1,xt.shape[-1])
+    backward_scores = bt * self.backward_score(flat_traj,time_pts_shaped)
+    
+    # div_term = bt * batch_div_exact(backward_scores,flat_traj,time_pts_shaped) + .5 * d * bt 
+    div_term = bt * hutch_div(backward_scores,flat_traj,time_pts_shaped) + .5 * d * bt 
+    loss = .5 * torch.sum((backward_scores + forward_scores.view(-1,xt.shape[-1]))**2)/in_cond.shape[0] \
+      + torch.sum(div_term)
     loss = dt * loss
-    loss += .5 * torch.mean(torch.sum(xt**2,dim=-1)) + .5 * d * log(2*pi)
+    loss += .5 * torch.sum(xt**2)/in_cond.shape[0] + .5 * d * log(2*pi)
     return loss
   
   def prior_sampling(self, shape, device):
