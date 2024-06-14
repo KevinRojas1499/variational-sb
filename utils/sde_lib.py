@@ -324,7 +324,7 @@ class SchrodingerBridge():
     n_time_pts = time_pts.shape[0]
     
     xt = in_cond.detach().clone().requires_grad_(True)
-    d = xt.shape[-1]
+    batch_size, d = xt.shape[0], xt.shape[-1]
     loss = 0
     trajectories = torch.empty((in_cond.shape[0], n_time_pts-1, *in_cond.shape[1:]),device=in_cond.device) 
     forward_scores = torch.empty_like(trajectories)
@@ -332,7 +332,7 @@ class SchrodingerBridge():
     for i, t in enumerate(time_pts):
       if i == n_time_pts - 1:
         break
-      t_shape = t.unsqueeze(-1).expand(xt.shape[0],1)
+      t_shape = t.unsqueeze(-1).expand(batch_size,1)
       
       bt = self.beta(t)
       forward_score = bt * self.forward_score(xt,t_shape) # beta * fw_score
@@ -345,17 +345,17 @@ class SchrodingerBridge():
       xt = xt + (-.5 * bt * xt + forward_score) * dt + torch.randn_like(xt) * self.diffusion(xt,t) * dt.abs().sqrt()
     
     # We now compute the loss fn, we first need to do some reshaping
-    time_pts_shaped = time_pts[:-1].repeat(xt.shape[0])
+    time_pts_shaped = time_pts[:-1].repeat(batch_size)
     bt = self.beta(time_pts_shaped)
     flat_traj = trajectories.reshape(-1,xt.shape[-1])
     backward_scores = bt * self.backward_score(flat_traj,time_pts_shaped)
     
     # div_term = bt * batch_div_exact(backward_scores,flat_traj,time_pts_shaped) + .5 * d * bt 
     div_term = bt * hutch_div(backward_scores,flat_traj,time_pts_shaped) + .5 * d * bt 
-    loss = .5 * torch.sum((backward_scores + forward_scores.view(-1,xt.shape[-1]))**2)/in_cond.shape[0] \
-      + torch.sum(div_term)/in_cond.shape[0]
+    loss = .5 * torch.sum((backward_scores + forward_scores.view(-1,xt.shape[-1]))**2)/batch_size \
+      + torch.sum(div_term)/batch_size
     loss = dt * loss
-    loss += .5 * torch.sum(xt**2)/in_cond.shape[0] + .5 * d * log(2*pi)
+    loss += .5 * torch.sum(xt**2)/batch_size + .5 * d * log(2*pi)
     return loss
   
   def prior_sampling(self, shape, device):
