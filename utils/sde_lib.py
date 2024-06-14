@@ -353,7 +353,7 @@ class SchrodingerBridge():
     # div_term = bt * batch_div_exact(backward_scores,flat_traj,time_pts_shaped) + .5 * d * bt 
     div_term = bt * hutch_div(backward_scores,flat_traj,time_pts_shaped) + .5 * d * bt 
     loss = .5 * torch.sum((backward_scores + forward_scores.view(-1,xt.shape[-1]))**2)/in_cond.shape[0] \
-      + torch.sum(div_term)
+      + torch.sum(div_term)/in_cond.shape[0]
     loss = dt * loss
     loss += .5 * torch.sum(xt**2)/in_cond.shape[0] + .5 * d * log(2*pi)
     return loss
