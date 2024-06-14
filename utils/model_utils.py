@@ -1,4 +1,4 @@
-from utils.models import MLP, ToyPolicy
+from utils.models import MLP, ToyPolicy, LinearMLP
 
 
 def get_model(name, device):
@@ -9,3 +9,6 @@ def get_model(name, device):
     elif name == 'toy':
         return ToyPolicy().requires_grad_(True).to(device=device), \
             ToyPolicy().requires_grad_(False).to(device=device)
+    elif name == 'linear':
+        return LinearMLP(2,False).requires_grad_(True).to(device=device), \
+            LinearMLP(2, False).requires_grad_(False).to(device=device)

@@ -30,7 +30,9 @@ def update_ema(model, model_ema, beta):
 
 @click.command()
 @click.option('--dataset',type=click.Choice(['gmm','spiral','checkerboard']))
-@click.option('--model_type',type=click.Choice(['mlp','toy']), default='mlp')
+@click.option('--model_forward',type=click.Choice(['mlp','toy','linear']), default='mlp')
+@click.option('--model_backward',type=click.Choice(['mlp','toy','linear']), default='mlp')
+
 @click.option('--sde',type=click.Choice(['vp','sb']), default='vp')
 @click.option('--optimizer',type=click.Choice(['adam','adamw']), default='adam')
 @click.option('--lr', type=float, default=3e-3)
@@ -44,8 +46,8 @@ def training(**opts):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     dataset = get_dataset(opts)
     dim = dataset.dim
-    model_backward, ema_backward = get_model(opts.model_type,device)
-    model_forward , ema_forward  = get_model(opts.model_type,device)
+    model_forward , ema_forward  = get_model(opts.model_forward,device)
+    model_backward, ema_backward = get_model(opts.model_backward,device)
     
     
     sde = utils.sde_lib.VP() if opts.sde == 'vp' else utils.sde_lib.SchrodingerBridge(model_forward,model_backward)

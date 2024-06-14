@@ -15,10 +15,8 @@ class MLP(nn.Module):
             self.true_dim += self.dim
         self.sequential = nn.Sequential(
             nn.Linear(self.true_dim,128),
-            nn.Sigmoid(),
+            nn.SiLU(),
             nn.Linear(128,256),
-            nn.ReLU(),
-            nn.Linear(256,256),
             nn.SiLU(),
             nn.Linear(256,128),
             nn.SiLU(),
@@ -29,6 +27,29 @@ class MLP(nn.Module):
         h = torch.cat([x, t.reshape(-1, 1)], dim=1)
         
         return self.sequential(h)
+    
+class LinearMLP(nn.Module):
+    def __init__(self, dim, augmented_sde) -> None:
+        super().__init__()
+        self.dim = dim
+        self.true_dim = self.dim + 1
+        if augmented_sde:
+            self.true_dim += self.dim
+        self.sequential = nn.Sequential(
+            nn.Linear(1,128),
+            nn.SiLU(),
+            nn.Linear(128,256),
+            nn.SiLU(),
+            nn.Linear(256,128),
+            nn.SiLU(),
+            nn.Linear(128,dim * dim)
+        )
+        
+    def forward(self,x,t):
+        t = t.flatten().unsqueeze(-1)
+        A = self.sequential(t).view(-1,self.dim,self.dim)
+        
+        return batch_matrix_product(A,x)
     
 class SB_Preconditioning(nn.Module):
     def __init__(self, model, sde : LinearSchrodingerBridge) -> None:
