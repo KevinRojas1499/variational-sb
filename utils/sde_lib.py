@@ -264,8 +264,7 @@ class SchrodingerBridge():
     Note that this is not a general SB, it is implemented so that after optimized
     the linear drift transports to a standard normal
   """
-  def __init__(self, forward_score, backward_score, T=1.,delta=1e-3, beta_min=0.1, beta_max=1):
-    # dX = - .5 (beta_min + beta_max * t) X_t dt + (...) dW
+  def __init__(self, forward_score, backward_score, T=1.,delta=1e-3, beta_min=0.1, beta_max=5):
     super().__init__()
     self._T = T
     self.delta = delta
@@ -278,10 +277,10 @@ class SchrodingerBridge():
     return self._T
   
   def beta(self, t):
-    return 2 * self.beta_max * t
+    return self.beta_max
   
   def beta_int(self, t):
-    return self.beta_max * t**2
+    return self.beta_max * t
   
   def drift(self, x,t, forward=True):
     beta = self.beta(t)
@@ -292,6 +291,33 @@ class SchrodingerBridge():
   
   def diffusion(self, x,t):
     return self.beta(t)**.5
+  
+  # def corrector_langevin_update(self, t, x, corrector, denoise_xT):
+  #   opt = self.opt
+  #   batch = x.shape[0]
+  #   alpha_t = torch.exp(-self.beta_int(t))
+  #   g_t = self.beta(t)
+  #   for _ in range(1):
+  #       # here, z = g * score
+  #       z =  corrector(x,t)
+
+  #       # score-based model : eps_{SGM} = 2 * alpha * (snr * \norm{noise/score} )^2
+  #       # schrodinger bridge: eps_{SB}  = 2 * alpha * (snr * \norm{noise/z} )^2
+  #       #                               = g^{-2} * eps_{SGM}
+  #       z_avg_norm = z.reshape(batch,-1).norm(dim=1).mean()
+  #       eps_temp = 2 * alpha_t * (opt.snr / z_avg_norm )**2
+  #       noise=torch.randn_like(z)
+  #       noise_avg_norm = noise.reshape(batch,-1).norm(dim=1).mean()
+  #       eps = eps_temp * (noise_avg_norm**2)
+
+  #       # score-based model:  x <- x + eps_SGM * score + sqrt{2 * eps_SGM} * noise
+  #       # schrodinger bridge: x <- x + g * eps_SB * z  + sqrt(2 * eps_SB) * g * noise
+  #       #                     (so that drift and diffusion are of the same scale) 
+  #       x = x + g_t*eps*z + g_t*torch.sqrt(2*eps)*noise
+
+  #   if denoise_xT: x = x + g_t*z
+
+    return x
   
   def eval_sb_loss(self, in_cond, time_pts):
     n_time_pts = time_pts.shape[0]
@@ -338,7 +364,8 @@ class SchrodingerBridge():
         # Predictor step
         xt = xt + drift * dt + torch.randn_like(xt) * self.diffusion(xt,t) * dt.abs().sqrt()
         # Corrector step
-        # xt = xt + (self.forward_score(xt,time_pts[i+1]) + self.forward_score(xt,time_pts[i+1]))
+        # grad = (self.forward_score(xt,time_pts[i+1]) + self.forward_score(xt,time_pts[i+1])) 
+        # xt = xt + grad * .1  + torch.randn_like(xt) * .1**.5 
       return xt
 class CLD(SDE):
   # We assume that images have shape [B, C, H, W] 

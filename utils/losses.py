@@ -15,10 +15,8 @@ def dsm_loss(sde : SDEs.SDE,data, model):
     return torch.mean(torch.sum(flatten_error,dim=1))
 
 def standard_sb_loss(sde : SDEs.SchrodingerBridge, data, model=None):
-    eps = sde.delta
-
     n_times = 100
-    time_pts = torch.linspace(eps, sde.T(),n_times, device=data.device)
+    time_pts = torch.linspace(0., sde.T(),n_times, device=data.device)
 
     return sde.eval_sb_loss(data,time_pts)
     

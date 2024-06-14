@@ -49,27 +49,28 @@ def training(**opts):
     
     
     sde = utils.sde_lib.VP() if opts.sde == 'vp' else utils.sde_lib.SchrodingerBridge(model_forward,model_backward)
-    opt = torch.optim.Adam(model_backward.parameters(),lr=opts.lr)
-    opt_sde = torch.optim.Adam(model_forward.parameters(),lr=opts.lr)
+    opt_forward = torch.optim.Adam(model_forward.parameters(),lr=opts.lr)
+    opt_backward = torch.optim.Adam(model_backward.parameters(),lr=opts.lr)
     num_iters = opts.num_iters
     batch_size = opts.batch_size
     log_sample_quality=opts.log_rate
-    data = dataset.sample(1000)
 
     loss_fn = losses.dsm_loss if opts.sde == 'vp' else losses.standard_sb_loss
     init_wandb(opts)
     for i in tqdm(range(num_iters)):
         data = dataset.sample(batch_size).to(device=device)
-        opt.zero_grad()
-        opt_sde.zero_grad()
+        opt_backward.zero_grad()
+        opt_forward.zero_grad()
+        
         loss = loss_fn(sde,data,model_backward)
         loss.backward()
-        opt.step()
-        opt_sde.step()
+        
+        opt_backward.step()
+        opt_forward.step()
         
         # Update EMA
-        # update_ema(model_forward,  ema_forward, opts.ema_beta)
-        # update_ema(model_backward, ema_backward, opts.ema_beta)
+        update_ema(model_forward,  ema_forward, opts.ema_beta)
+        update_ema(model_backward, ema_backward, opts.ema_beta)
         
         
         wandb.log({
@@ -103,7 +104,7 @@ def create_figs(dim, data_array, names):
             fig.add_trace(go.Scatter(x=data[:,0].cpu().detach().numpy(), 
                                             y=data[:,1].cpu().detach().numpy(),
                                             mode='markers',name=name))
-                                
+            fig.update_layout(yaxis_range=[-16,16], xaxis_range=[-16,16])     
     return fig
 
 if __name__ == '__main__':

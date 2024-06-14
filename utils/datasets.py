@@ -94,7 +94,7 @@ class Spiral(Dataset):
         data_a = np.array([np.cos(theta)*r_a, np.sin(theta)*r_a]).T
         x_a = data_a + 0.25*np.random.randn(n,2)
         samples = np.append(x_a, np.zeros((n,1)), axis=1)
-        samples = samples[:,0:2] * 0.4 # default 0.4 re-scaled
+        samples = samples[:,0:2]
         samples[:, 0] = self.x_scalar * samples[:, 0]
         samples[:, 1] = self.y_scalar * samples[:, 1]
         return torch.Tensor(samples)       
