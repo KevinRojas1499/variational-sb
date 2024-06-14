@@ -82,8 +82,8 @@ def training(**opts):
         if (i+1)%log_sample_quality == 0:
             # new_data = utils.samplers.get_euler_maruyama(1000,sde,model_backward,dim,device)
             sampling_sde = utils.sde_lib.SchrodingerBridge(ema_forward,ema_backward)
-            new_data = sde.sample((1000,2), device)
-            new_data_ema = sampling_sde.sample((1000,2), device)
+            new_data, _ = sde.sample((1000,2), device)
+            new_data_ema, _  = sampling_sde.sample((1000,2), device)
             fig = create_figs(dim, [data, new_data, new_data_ema], ['true','normal', 'ema'])
             wandb.log({'w2': get_w2(new_data,data), 'w2-ema': get_w2(new_data_ema, data),'samples': fig })
             
