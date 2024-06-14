@@ -106,7 +106,7 @@ def create_figs(dim, data_array, names):
             fig.add_trace(go.Scatter(x=data[:,0].cpu().detach().numpy(), 
                                             y=data[:,1].cpu().detach().numpy(),
                                             mode='markers',name=name))
-            fig.update_layout(yaxis_range=[-16,16], xaxis_range=[-16,16])     
+            # fig.update_layout(yaxis_range=[-16,16], xaxis_range=[-16,16])     
     return fig
 
 if __name__ == '__main__':

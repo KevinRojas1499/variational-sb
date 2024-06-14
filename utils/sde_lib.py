@@ -382,6 +382,30 @@ class SchrodingerBridge():
         # xt = xt + grad * .1  + torch.randn_like(xt) * .1**.5 
         trajectories[:,i] = xt
       return xt, trajectories
+
+  def probability_flow(self, shape, device, backward=True, in_cond=None):
+    with torch.no_grad():
+      xt = self.prior_sampling(shape,device) if backward else in_cond
+      assert xt is not None
+      n_time_pts = 100      
+      time_pts = torch.linspace(0., self.T(), n_time_pts, device=device)
+      trajectories = torch.empty((xt.shape[0], n_time_pts-1, *xt.shape[1:]),device=xt.device) 
+
+      for i, t in enumerate(time_pts):
+        if i == n_time_pts - 1:
+          break
+        dt = time_pts[i+1] - t 
+        dt = -dt if backward else dt 
+        t_shape = t.unsqueeze(-1).expand(xt.shape[0],1)
+        beta = self.beta(self.T() - t_shape)
+        drift = self.drift(xt,self.T() - t_shape, forward=True)
+        drift = -.5 * beta * xt \
+          + .5 * beta * self.forward_score(xt,self.T() - t_shape) \
+          - .5 *beta * self.backward_score(xt, self.T() - t_shape)
+        xt = xt + drift * dt
+        trajectories[:,i] = xt
+      return xt, trajectories
+
 class CLD(SDE):
   # We assume that images have shape [B, C, H, W] 
   # Additionally there has been added channels as momentum
