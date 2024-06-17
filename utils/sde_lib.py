@@ -109,6 +109,48 @@ class VP(SDE):
   def prior_sampling(self, shape, device):
     return torch.randn(*shape, dtype=torch.float, device=device)
 
+class EDM(SDE):
+
+  def __init__(self,T=80.,delta=1e-3, model_backward=None):
+    # dX = - .5 (beta_min + beta_max * t) X_t dt + (...) dW
+    super().__init__()
+    self._T = T
+    self.delta = delta
+    self.model_backward = model_backward
+
+  def T(self):
+    return self._T
+  
+  def beta(self, t):
+    return 2 * t
+  
+  def beta_int(self, t):
+    return t**2
+  
+  def marginal_prob(self, x, t):
+    # If    x is of shape [B, H, W, C]
+    # then  t is of shape [B, 1, 1, 1] 
+    # And similarly for other shapes
+    return  x, self.beta_int(t)
+  
+  def marginal_prob_std(self, t):
+    return self.beta_int(t)**.5
+  
+  def drift(self, x,t, forward=True):
+    if forward:
+      return 0.
+    else:
+      return 0. - self.beta(t) * self.model_backward(x,t)
+  
+  def probability_flow_drift(self, xt, t):
+    return - .5 * self.beta(t) * self.model_backward(xt,t)
+  
+  def diffusion(self, x,t):
+    return self.beta(t)**.5
+
+  def prior_sampling(self, shape, device):
+    return torch.randn(*shape, dtype=torch.float, device=device) * self.marginal_prob_std(self.T())
+
 class VariationaLinearlDrift(nn.Module):
   
   def __init__(self,dim):
@@ -414,10 +456,12 @@ class CLD(SDE):
   def prior_sampling(self, shape, device):
     return torch.randn(*shape, dtype=torch.float, device=device)
   
-  
+
 def get_sde(sde_name):
   if sde_name == 'vp':
     return VP()
+  if sde_name == 'edm':
+    return EDM()
   if sde_name == 'sb':
     return LinearSchrodingerBridge()
   elif sde_name == 'cld':

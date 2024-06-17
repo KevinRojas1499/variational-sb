@@ -7,7 +7,7 @@ from tqdm import tqdm
 from itertools import chain
 from torch.optim import Adam
 
-from utils.sde_lib import SchrodingerBridge, VP
+from utils.sde_lib import SchrodingerBridge, VP, get_sde
 import utils.losses as losses
 from utils.model_utils import get_model, get_preconditioned_model
 from utils.datasets import get_dataset
@@ -32,19 +32,19 @@ def default_num_iters(ctx, param, value):
     sde = ctx.params.get('sde')
     if value is not None: 
         return value
-    return 30000 if sde == 'vp' else 2000
+    return 2000 if sde == 'sb' else 30000
 def default_log_rate(ctx, param, value):
     sde = ctx.params.get('sde')
     if value is not None: 
         return value
-    return 5000 if sde == 'vp' else 500
+    return 500 if sde == 'sb' else 5000
 
 @click.command()
 @click.option('--dataset',type=click.Choice(['gmm','spiral','checkerboard']))
 @click.option('--model_forward',type=click.Choice(['mlp','toy','linear']), default='mlp')
 @click.option('--model_backward',type=click.Choice(['mlp','toy','linear']), default='mlp')
 @click.option('--precondition', is_flag=True, default=False)
-@click.option('--sde',type=click.Choice(['vp','sb']), default='vp')
+@click.option('--sde',type=click.Choice(['vp','sb','edm']), default='vp')
 @click.option('--optimizer',type=click.Choice(['adam','adamw']), default='adam')
 @click.option('--lr', type=float, default=3e-3)
 @click.option('--ema_beta', type=float, default=.99)
@@ -54,20 +54,27 @@ def default_log_rate(ctx, param, value):
 @click.option('--dir',type=str)
 def training(**opts):
     opts = dotdict(opts)
+    print(opts)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     dataset = get_dataset(opts)
     dim = dataset.dim
     is_sb = opts.sde == 'sb'
     
+    sde = get_sde(opts.sde)
+    sampling_sde = get_sde(opts.sde)
+    # Set up backwards model
     model_backward, ema_backward = get_model(opts.model_backward,device)
+    sde.model_backward = model_backward
+    sampling_sde.model_backward = model_backward
     if is_sb:
+        # We need a forward model
         model_forward , ema_forward  = get_model(opts.model_forward,device)
-    
-    sde = SchrodingerBridge(model_forward,model_backward) if is_sb else VP(model_backward=model_backward)
-    sampling_sde = SchrodingerBridge(ema_forward,ema_backward) if is_sb else VP(model_backward=model_backward)
+        sde.model_forward = model_forward
+        sampling_sde.model_forward = model_forward
+        
     if opts.precondition:
-        sde.model_backward = get_preconditioned_model(model_backward, sde)  
-        sampling_sde.model_backward = get_preconditioned_model(model_backward, sde)  
+        sde.model_backward = get_preconditioned_model(model_backward, sde)
+        sampling_sde.model_backward = get_preconditioned_model(model_backward, sde)
         
     opt = Adam(chain(model_forward.parameters(), model_backward.parameters()) 
                if is_sb else model_backward.parameters(), lr=opts.lr )
@@ -75,7 +82,7 @@ def training(**opts):
     batch_size = opts.batch_size
     log_sample_quality=opts.log_rate
 
-    loss_fn = losses.dsm_loss if opts.sde == 'vp' else losses.standard_sb_loss
+    loss_fn = losses.standard_sb_loss if is_sb else losses.dsm_loss 
     init_wandb(opts)
     for i in tqdm(range(num_iters)):
         data = dataset.sample(batch_size).to(device=device)
