@@ -104,7 +104,7 @@ def get_dataset(opts):
     if opts.dataset == 'gmm':
          return get_gmm(2, None, device='cuda')
     elif opts.dataset == 'spiral':
-        return Spiral(y_scalar=3.2)
+        return Spiral(x_scalar=.4, y_scalar=3.2)
     elif opts.dataset == 'checkerboard':
         return CheckerBoard()
     else:

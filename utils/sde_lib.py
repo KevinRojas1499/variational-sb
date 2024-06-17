@@ -4,7 +4,6 @@ import torch
 import torch.nn as nn
 from math import pi, log
 
-import matplotlib.pyplot as plt
 from utils.diff import batch_div_exact, hutch_div
 from utils.misc import batch_matrix_product
 
@@ -50,22 +49,23 @@ class SDE(abc.ABC):
 
 class VP(SDE):
 
-  def __init__(self,T=1.,delta=1e-3, beta_min=0.1, beta_max=20):
+  def __init__(self,T=1.,delta=1e-3, beta_min=0.1, beta_max=5, model_backward=None):
     # dX = - .5 (beta_min + beta_max * t) X_t dt + (...) dW
     super().__init__()
     self._T = T
     self.delta = delta
     self.beta_min = beta_min
     self.beta_max = beta_max
+    self.model_backward = model_backward
 
   def T(self):
     return self._T
   
   def beta(self, t):
-    return self.beta_min + (self.beta_max - self.beta_min) * t 
+    return self.beta_max
   
   def beta_int(self, t):
-    return self.beta_min * t + (self.beta_max - self.beta_min) * t**2/2
+    return self.beta_max * t
   
   def marginal_prob(self, x, t):
     # If    x is of shape [B, H, W, C]
@@ -77,8 +77,11 @@ class VP(SDE):
   def marginal_prob_std(self, t):
     return (1 - torch.exp(-self.beta_int(t)))**.5
   
-  def drift(self, x,t):
-    return - .5 * self.beta(t) * x
+  def drift(self, x,t, forward=True):
+    if forward:
+      return -.5 * self.beta(t) * x
+    else:
+      return -.5 * self.beta(t) * x - self.beta(t) * self.model_backward(x,t)
   
   def diffusion(self, x,t):
     return self.beta(t)**.5
@@ -107,6 +110,28 @@ class VP(SDE):
   def prior_sampling(self, shape, device):
     return torch.randn(*shape, dtype=torch.float, device=device)
 
+  def sample(self, shape, device, backward=True, in_cond=None, prob_flow=False):
+    with torch.no_grad():
+      xt = self.prior_sampling(shape,device) if backward else in_cond
+      assert xt is not None
+      n_time_pts = 100      
+      time_pts = torch.linspace(0., self.T(), n_time_pts, device=device)
+      trajectories = torch.empty((xt.shape[0], n_time_pts-1, *xt.shape[1:]),device=xt.device) 
+
+      for i, t in enumerate(time_pts):
+        if i == n_time_pts - 1:
+          break
+        dt = time_pts[i+1] - t 
+        dt = -dt if backward else dt 
+        t_shape = self.T() - t if backward else t
+        t_shape = t_shape.unsqueeze(-1).expand(xt.shape[0],1)
+        drift = self.drift(xt,t_shape, forward=(not backward))
+        xt = xt + drift * dt + torch.randn_like(xt) * self.diffusion(xt,t) * dt.abs().sqrt()
+        # Corrector step
+        # grad = (self.forward_score(xt,time_pts[i+1]) + self.forward_score(xt,time_pts[i+1])) 
+        # xt = xt + grad * .1  + torch.randn_like(xt) * .1**.5 
+        trajectories[:,i] = xt
+      return xt, trajectories
 
 
 class VariationaLinearlDrift(nn.Module):
@@ -374,14 +399,20 @@ class SchrodingerBridge():
           break
         dt = time_pts[i+1] - t 
         dt = -dt if backward else dt 
-        t_shape = t.unsqueeze(-1).expand(xt.shape[0],1)
-        drift = self.drift(xt,self.T() - t_shape, forward=(not backward))
+        t_shape = self.T() - t if backward else t
+        t_shape = t_shape.unsqueeze(-1).expand(xt.shape[0],1)
+        drift = self.drift(xt,t_shape, forward=(not backward))
         xt = xt + drift * dt + torch.randn_like(xt) * self.diffusion(xt,t) * dt.abs().sqrt()
         # Corrector step
         # grad = (self.forward_score(xt,time_pts[i+1]) + self.forward_score(xt,time_pts[i+1])) 
         # xt = xt + grad * .1  + torch.randn_like(xt) * .1**.5 
         trajectories[:,i] = xt
       return xt, trajectories
+
+  def probability_flow_drift(self, xt, t):
+    beta = self.beta(t)
+    return -.5 * beta * (xt - self.forward_score(xt,t) \
+      + self.backward_score(xt, t))
 
   def probability_flow(self, shape, device, backward=True, in_cond=None):
     with torch.no_grad():
@@ -396,12 +427,9 @@ class SchrodingerBridge():
           break
         dt = time_pts[i+1] - t 
         dt = -dt if backward else dt 
-        t_shape = t.unsqueeze(-1).expand(xt.shape[0],1)
-        beta = self.beta(self.T() - t_shape)
-        drift = self.drift(xt,self.T() - t_shape, forward=True)
-        drift = -.5 * beta * xt \
-          + .5 * beta * self.forward_score(xt,self.T() - t_shape) \
-          - .5 *beta * self.backward_score(xt, self.T() - t_shape)
+        t_shape = self.T() - t if backward else t
+        t_shape = t_shape.unsqueeze(-1).expand(xt.shape[0],1)
+        drift = self.probability_flow_drift(xt,t_shape)
         xt = xt + drift * dt
         trajectories[:,i] = xt
       return xt, trajectories

@@ -4,13 +4,13 @@ import click
 import wandb
 import plotly.graph_objects as go
 from tqdm import tqdm
+from itertools import chain
+from torch.optim import Adam
 
-import utils.sde_lib
-import utils.models
+from utils.sde_lib import SchrodingerBridge, VP
 import utils.losses as losses
-from utils.model_utils import get_model
+from utils.model_utils import get_model, get_preconditioned_model
 from utils.datasets import get_dataset
-import utils.samplers
 from utils.metrics import get_w2
 from utils.misc import dotdict
 
@@ -28,31 +28,49 @@ def update_ema(model, model_ema, beta):
     for p_ema, p_net in zip(model_ema.parameters(), model.parameters()):
         p_ema.copy_(p_net.detach().lerp(p_ema, beta))
 
+def default_num_iters(ctx, param, value):
+    sde = ctx.params.get('sde')
+    if value is not None: 
+        return value
+    return 30000 if sde == 'vp' else 2000
+def default_log_rate(ctx, param, value):
+    sde = ctx.params.get('sde')
+    if value is not None: 
+        return value
+    return 5000 if sde == 'vp' else 500
+
 @click.command()
 @click.option('--dataset',type=click.Choice(['gmm','spiral','checkerboard']))
 @click.option('--model_forward',type=click.Choice(['mlp','toy','linear']), default='mlp')
 @click.option('--model_backward',type=click.Choice(['mlp','toy','linear']), default='mlp')
-
+@click.option('--precondition', is_flag=True, default=False)
 @click.option('--sde',type=click.Choice(['vp','sb']), default='vp')
 @click.option('--optimizer',type=click.Choice(['adam','adamw']), default='adam')
 @click.option('--lr', type=float, default=3e-3)
 @click.option('--ema_beta', type=float, default=.99)
 @click.option('--batch_size', type=int, default=512)
-@click.option('--log_rate',type=int,default=5000)
-@click.option('--num_iters',type=int,default=30000)
+@click.option('--log_rate',type=int,callback=default_log_rate)
+@click.option('--num_iters',type=int,callback=default_num_iters)
 @click.option('--dir',type=str)
 def training(**opts):
     opts = dotdict(opts)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     dataset = get_dataset(opts)
     dim = dataset.dim
-    model_forward , ema_forward  = get_model(opts.model_forward,device)
+    is_sb = opts.sde == 'sb'
+    
     model_backward, ema_backward = get_model(opts.model_backward,device)
+    if is_sb:
+        model_forward , ema_forward  = get_model(opts.model_forward,device)
     
-    
-    sde = utils.sde_lib.VP() if opts.sde == 'vp' else utils.sde_lib.SchrodingerBridge(model_forward,model_backward)
-    opt_forward = torch.optim.Adam(model_forward.parameters(),lr=opts.lr)
-    opt_backward = torch.optim.Adam(model_backward.parameters(),lr=opts.lr)
+    sde = SchrodingerBridge(model_forward,model_backward) if is_sb else VP(model_backward=model_backward)
+    sampling_sde = SchrodingerBridge(ema_forward,ema_backward) if is_sb else VP(model_backward=model_backward)
+    if opts.precondition:
+        sde.model_backward = get_preconditioned_model(model_backward, sde)  
+        sampling_sde.model_backward = get_preconditioned_model(model_backward, sde)  
+        
+    opt = Adam(chain(model_forward.parameters(), model_backward.parameters()) 
+               if is_sb else model_backward.parameters(), lr=opts.lr )
     num_iters = opts.num_iters
     batch_size = opts.batch_size
     log_sample_quality=opts.log_rate
@@ -61,27 +79,24 @@ def training(**opts):
     init_wandb(opts)
     for i in tqdm(range(num_iters)):
         data = dataset.sample(batch_size).to(device=device)
-        opt_backward.zero_grad()
-        opt_forward.zero_grad()
+        opt.zero_grad()
         
         loss = loss_fn(sde,data,model_backward)
         loss.backward()
         
-        opt_backward.step()
-        opt_forward.step()
+        opt.step()
         
         # Update EMA
-        update_ema(model_forward,  ema_forward, opts.ema_beta)
         update_ema(model_backward, ema_backward, opts.ema_beta)
+        if is_sb:
+            update_ema(model_forward,  ema_forward, opts.ema_beta)
         
         
         wandb.log({
             'loss': loss
         })
         # Evaluate sample accuracy
-        if (i+1)%log_sample_quality == 0:
-            # new_data = utils.samplers.get_euler_maruyama(1000,sde,model_backward,dim,device)
-            sampling_sde = utils.sde_lib.SchrodingerBridge(ema_forward,ema_backward)
+        if (i+1)%log_sample_quality == 0 or i+1 == num_iters:
             new_data, _ = sde.sample((1000,2), device)
             new_data_ema, _  = sampling_sde.sample((1000,2), device)
             fig = create_figs(dim, [data, new_data, new_data_ema], ['true','normal', 'ema'])
@@ -92,9 +107,10 @@ def training(**opts):
             
             torch.save(model_backward,os.path.join(path, f'backward_{i+1}.pt'))
             torch.save(ema_backward,os.path.join(path, f'backward_ema_{i+1}.pt'))
-            torch.save(model_forward,os.path.join(path, f'forward_{i+1}.pt'))
-            torch.save(ema_forward,os.path.join(path, f'forward_ema_{i+1}.pt'))
-            
+            if is_sb:
+                torch.save(model_forward,os.path.join(path, f'forward_{i+1}.pt'))
+                torch.save(ema_forward,os.path.join(path, f'forward_ema_{i+1}.pt'))
+                
 
 def create_figs(dim, data_array, names):
     fig = go.Figure()
