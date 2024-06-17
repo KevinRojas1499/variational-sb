@@ -11,11 +11,6 @@ class SDE(abc.ABC):
   """SDE abstract class. Functions are designed for a mini-batch of inputs."""
 
   def __init__(self):
-    """Construct an SDE.
-
-    Args:
-      N: number of discretization time steps.
-    """
     super().__init__()
 
   @property
@@ -25,28 +20,49 @@ class SDE(abc.ABC):
     pass
 
   @abc.abstractmethod
-  def marginal_prob(self, x, t):
-    """Parameters to determine the marginal distribution of the SDE, $p_t(x)$."""
-    pass
-
-  @abc.abstractmethod
   def prior_sampling(self, shape):
     """Generate one sample from the prior distribution, $p_T(x)$."""
     pass
+  
+  @abc.abstractmethod
+  def drift(self, x,t, forward=True):
+    """Drift of the SDE"""
+    pass
+  
+  @abc.abstractmethod
+  def diffusion(self, x,t, forward=True):
+    """Diffusion of the SDE"""
+    pass
+  
+  @abc.abstractmethod
+  def probability_flow_drift(self, xt, t):
+    """Probability flow drift"""
+    pass
+  
+  def sample(self, shape, device, backward=True, in_cond=None, prob_flow=False):
+    with torch.no_grad():
+      xt = self.prior_sampling(shape,device) if backward else in_cond
+      assert xt is not None
+      n_time_pts = 100      
+      time_pts = torch.linspace(0., self.T(), n_time_pts, device=device)
+      trajectories = torch.empty((xt.shape[0], n_time_pts-1, *xt.shape[1:]),device=xt.device) 
 
-  # @abc.abstractmethod
-  # def prior_logp(self, z):
-  #   """Compute log-density of the prior distribution.
-
-  #   Useful for computing the log-likelihood via probability flow ODE.
-
-  #   Args:
-  #     z: latent code
-  #   Returns:
-  #     log probability density
-  #   """
-  #   pass
-
+      for i, t in enumerate(time_pts):
+        if i == n_time_pts - 1:
+          break
+        dt = time_pts[i+1] - t 
+        dt = -dt if backward else dt 
+        t_shape = self.T() - t if backward else t
+        t_shape = t_shape.unsqueeze(-1).expand(xt.shape[0],1)
+        if prob_flow:
+          drift = self.probability_flow_drift(xt,t_shape)
+          xt = xt + drift * dt
+        else:
+          drift = self.drift(xt,t_shape, forward=(not backward))
+          xt = xt + drift * dt + torch.randn_like(xt) * self.diffusion(xt,t) * dt.abs().sqrt()
+        trajectories[:,i] = xt
+      return xt, trajectories
+  
 class VP(SDE):
 
   def __init__(self,T=1.,delta=1e-3, beta_min=0.1, beta_max=5, model_backward=None):
@@ -83,56 +99,15 @@ class VP(SDE):
     else:
       return -.5 * self.beta(t) * x - self.beta(t) * self.model_backward(x,t)
   
+  def probability_flow_drift(self, xt, t):
+    beta = self.beta(t)
+    return -.5 * beta * (xt + self.model_backward(xt,t))
+  
   def diffusion(self, x,t):
     return self.beta(t)**.5
-  
-  def time_steps(self, n, device):
-    from math import exp, log
-    c = 1.6 * (exp(log(self.T()/self.delta)/n) - 1)
-    t_steps = torch.zeros(n,device=device)
-    t_steps[0] = self.delta
-    exp_step = True
-    for i in range(1,n):
-      if exp_step:
-        t_steps[i] = t_steps[i-1] + c * t_steps[i-1]
-        if t_steps[i] >= 1:
-          c = (self.T() - t_steps[i-1])/(n-i)
-          t_steps[i] = t_steps[i-1] + c
-          exp_step = False
-      else:
-        t_steps[i] = t_steps[i-1] + c
-    
-    t_steps[-1] = self.T()
-    t_steps = self.T() - t_steps  
-    t_steps = torch.flip(t_steps,dims=(0,))
-    return t_steps.to(dtype=torch.float)
-  
+
   def prior_sampling(self, shape, device):
     return torch.randn(*shape, dtype=torch.float, device=device)
-
-  def sample(self, shape, device, backward=True, in_cond=None, prob_flow=False):
-    with torch.no_grad():
-      xt = self.prior_sampling(shape,device) if backward else in_cond
-      assert xt is not None
-      n_time_pts = 100      
-      time_pts = torch.linspace(0., self.T(), n_time_pts, device=device)
-      trajectories = torch.empty((xt.shape[0], n_time_pts-1, *xt.shape[1:]),device=xt.device) 
-
-      for i, t in enumerate(time_pts):
-        if i == n_time_pts - 1:
-          break
-        dt = time_pts[i+1] - t 
-        dt = -dt if backward else dt 
-        t_shape = self.T() - t if backward else t
-        t_shape = t_shape.unsqueeze(-1).expand(xt.shape[0],1)
-        drift = self.drift(xt,t_shape, forward=(not backward))
-        xt = xt + drift * dt + torch.randn_like(xt) * self.diffusion(xt,t) * dt.abs().sqrt()
-        # Corrector step
-        # grad = (self.forward_score(xt,time_pts[i+1]) + self.forward_score(xt,time_pts[i+1])) 
-        # xt = xt + grad * .1  + torch.randn_like(xt) * .1**.5 
-        trajectories[:,i] = xt
-      return xt, trajectories
-
 
 class VariationaLinearlDrift(nn.Module):
   
@@ -229,28 +204,7 @@ class LinearSchrodingerBridge(SDE):
   
   def diffusion(self, x,t):
     return self.beta(t)**.5
-  
-  def time_steps(self, n, device):
-    from math import exp, log
-    c = 1.6 * (exp(log(self.T()/self.delta)/n) - 1)
-    t_steps = torch.zeros(n,device=device)
-    t_steps[0] = self.delta
-    exp_step = True
-    for i in range(1,n):
-      if exp_step:
-        t_steps[i] = t_steps[i-1] + c * t_steps[i-1]
-        if t_steps[i] >= 1:
-          c = (self.T() - t_steps[i-1])/(n-i)
-          t_steps[i] = t_steps[i-1] + c
-          exp_step = False
-      else:
-        t_steps[i] = t_steps[i-1] + c
-    
-    t_steps[-1] = self.T()
-    t_steps = self.T() - t_steps  
-    t_steps = torch.flip(t_steps,dims=(0,))
-    return t_steps.to(dtype=torch.float)
-  
+
   def eval_sb_loss(self, in_cond, time_pts, model):
     n_time_pts = time_pts.shape[0]
     # trajectories = torch.empty((in_cond.shape[0], n_time_pts, *in_cond.shape[1:]),device=in_cond.device) 
@@ -284,7 +238,7 @@ class LinearSchrodingerBridge(SDE):
     return (L @ torch.randn(*shape, dtype=torch.float, device=device).T).T
 
 
-class SchrodingerBridge():
+class SchrodingerBridge(SDE):
   """ 
     Note that this is not a general SB, it is implemented so that after optimized
     the linear drift transports to a standard normal
@@ -316,33 +270,6 @@ class SchrodingerBridge():
   
   def diffusion(self, x,t):
     return self.beta(t)**.5
-  
-  # def corrector_langevin_update(self, t, x, corrector, denoise_xT):
-  #   opt = self.opt
-  #   batch = x.shape[0]
-  #   alpha_t = torch.exp(-self.beta_int(t))
-  #   g_t = self.beta(t)
-  #   for _ in range(1):
-  #       # here, z = g * score
-  #       z =  corrector(x,t)
-
-  #       # score-based model : eps_{SGM} = 2 * alpha * (snr * \norm{noise/score} )^2
-  #       # schrodinger bridge: eps_{SB}  = 2 * alpha * (snr * \norm{noise/z} )^2
-  #       #                               = g^{-2} * eps_{SGM}
-  #       z_avg_norm = z.reshape(batch,-1).norm(dim=1).mean()
-  #       eps_temp = 2 * alpha_t * (opt.snr / z_avg_norm )**2
-  #       noise=torch.randn_like(z)
-  #       noise_avg_norm = noise.reshape(batch,-1).norm(dim=1).mean()
-  #       eps = eps_temp * (noise_avg_norm**2)
-
-  #       # score-based model:  x <- x + eps_SGM * score + sqrt{2 * eps_SGM} * noise
-  #       # schrodinger bridge: x <- x + g * eps_SB * z  + sqrt(2 * eps_SB) * g * noise
-  #       #                     (so that drift and diffusion are of the same scale) 
-  #       x = x + g_t*eps*z + g_t*torch.sqrt(2*eps)*noise
-
-  #   if denoise_xT: x = x + g_t*z
-
-    return x
   
   def eval_sb_loss(self, in_cond, time_pts):
     # We assume that time_pts is a discretization of the interval [0,T]
@@ -386,53 +313,10 @@ class SchrodingerBridge():
   def prior_sampling(self, shape, device):
     return torch.randn(*shape, dtype=torch.float, device=device)
 
-  def sample(self, shape, device, backward=True, in_cond=None):
-    with torch.no_grad():
-      xt = self.prior_sampling(shape,device) if backward else in_cond
-      assert xt is not None
-      n_time_pts = 100      
-      time_pts = torch.linspace(0., self.T(), n_time_pts, device=device)
-      trajectories = torch.empty((xt.shape[0], n_time_pts-1, *xt.shape[1:]),device=xt.device) 
-
-      for i, t in enumerate(time_pts):
-        if i == n_time_pts - 1:
-          break
-        dt = time_pts[i+1] - t 
-        dt = -dt if backward else dt 
-        t_shape = self.T() - t if backward else t
-        t_shape = t_shape.unsqueeze(-1).expand(xt.shape[0],1)
-        drift = self.drift(xt,t_shape, forward=(not backward))
-        xt = xt + drift * dt + torch.randn_like(xt) * self.diffusion(xt,t) * dt.abs().sqrt()
-        # Corrector step
-        # grad = (self.forward_score(xt,time_pts[i+1]) + self.forward_score(xt,time_pts[i+1])) 
-        # xt = xt + grad * .1  + torch.randn_like(xt) * .1**.5 
-        trajectories[:,i] = xt
-      return xt, trajectories
-
   def probability_flow_drift(self, xt, t):
     beta = self.beta(t)
     return -.5 * beta * (xt - self.forward_score(xt,t) \
       + self.backward_score(xt, t))
-
-  def probability_flow(self, shape, device, backward=True, in_cond=None):
-    with torch.no_grad():
-      xt = self.prior_sampling(shape,device) if backward else in_cond
-      assert xt is not None
-      n_time_pts = 100      
-      time_pts = torch.linspace(0., self.T(), n_time_pts, device=device)
-      trajectories = torch.empty((xt.shape[0], n_time_pts-1, *xt.shape[1:]),device=xt.device) 
-
-      for i, t in enumerate(time_pts):
-        if i == n_time_pts - 1:
-          break
-        dt = time_pts[i+1] - t 
-        dt = -dt if backward else dt 
-        t_shape = self.T() - t if backward else t
-        t_shape = t_shape.unsqueeze(-1).expand(xt.shape[0],1)
-        drift = self.probability_flow_drift(xt,t_shape)
-        xt = xt + drift * dt
-        trajectories[:,i] = xt
-      return xt, trajectories
 
 class CLD(SDE):
   # We assume that images have shape [B, C, H, W] 
@@ -526,27 +410,6 @@ class CLD(SDE):
     x,v = torch.chunk(z,2,dim=-1)
     # TODO : DO 
     return 2**.5
-  
-  def time_steps(self, n, device):
-    from math import exp, log
-    c = 1.6 * (exp(log(self.T()/self.delta)/n) - 1)
-    t_steps = torch.zeros(n,device=device)
-    t_steps[0] = self.delta
-    exp_step = True
-    for i in range(1,n):
-      if exp_step:
-        t_steps[i] = t_steps[i-1] + c * t_steps[i-1]
-        if t_steps[i] >= 1:
-          c = (self.T() - t_steps[i-1])/(n-i)
-          t_steps[i] = t_steps[i-1] + c
-          exp_step = False
-      else:
-        t_steps[i] = t_steps[i-1] + c
-    
-    t_steps[-1] = self.T()
-    t_steps = self.T() - t_steps  
-    t_steps = torch.flip(t_steps,dims=(0,))
-    return t_steps.to(dtype=torch.float)
   
   def prior_sampling(self, shape, device):
     return torch.randn(*shape, dtype=torch.float, device=device)
