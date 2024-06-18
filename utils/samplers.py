@@ -17,10 +17,10 @@ def em_sampler(sde : SDE, score_model,
                 num_steps=500, 
                 device='cuda'):
     ones = torch.ones(batch_size, device=device)
-    time_pts = torch.linspace(0, sde.T() - sde.delta, num_steps, device=device)
-    time_pts = torch.cat((time_pts, torch.tensor([sde.T()],device=device)))
+    time_pts = torch.linspace(0, sde.T - sde.delta, num_steps, device=device)
+    time_pts = torch.cat((time_pts, torch.tensor([sde.T],device=device)))
     x_t = sde.prior_sampling(sampling_shape)
-    T = sde.T()
+    T = sde.T
     with torch.no_grad():
         for i in tqdm(range(num_steps), leave=False):
             # plot_32_mnist(x_t,f'trajectory/{i}_mnist.jpeg')
@@ -42,10 +42,10 @@ def get_euler_maruyama(num_samples, sde, model, dim, device):
         x_t = sde.prior_sampling((num_samples,dim),device=device)
 
         # time_pts = sde.time_steps(100, device)
-        time_pts = torch.linspace(sde.delta,sde.T(),100, device=device)
+        time_pts = torch.linspace(sde.delta,sde.T,100, device=device)
         
         pbar = tqdm(range(len(time_pts) - 1),leave=False)
-        T = sde.T()
+        T = sde.T
         for i in pbar:
             t = time_pts[i].expand(num_samples,1)
             dt = time_pts[i + 1] - t
@@ -65,7 +65,7 @@ def get_exponential_integrator(num_samples, sde, model : MLP, device):
     x_t = sde.prior_sampling((num_samples,2),device=device)
 
     time_pts = sde.time_steps(25, device)
-    T = sde.T()
+    T = sde.T
     pbar = tqdm(range(len(time_pts) - 1),leave=False)
     for i in pbar:
         t = time_pts[i].unsqueeze(-1).expand(num_samples,-1)
@@ -87,8 +87,8 @@ def get_cld_euler(sde : CLD, score_model,
     z_t = sde.prior_sampling(shape=sampling_shape,device=device)
     z_x, z_v = z_t.chunk(2,dim=1)
     time_pts = sde.time_steps(num_steps, device)
-    time_pts = torch.linspace(sde.delta, sde.T(), num_steps, device=device)
-    T = sde.T()
+    time_pts = torch.linspace(sde.delta, sde.T, num_steps, device=device)
+    T = sde.T
     pbar = tqdm(range(len(time_pts) - 1),leave=False)
     for i in pbar:
         t = time_pts[i].unsqueeze(-1)

@@ -18,10 +18,10 @@ def em_sampler(sde : VP, score_model,
                            num_steps=500, 
                            device='cuda',file_name='mnist_samples.jpeg'):
     ones = torch.ones(batch_size, device=device)
-    time_pts = torch.linspace(0, sde.T() - sde.delta, num_steps, device=device)
-    time_pts = torch.cat((time_pts, torch.tensor([sde.T()],device=device)))
+    time_pts = torch.linspace(0, sde.T - sde.delta, num_steps, device=device)
+    time_pts = torch.cat((time_pts, torch.tensor([sde.T],device=device)))
     x_t = torch.randn(batch_size, 1, 32, 32, device=device)
-    T = sde.T()
+    T = sde.T
     with torch.no_grad():
         for i in tqdm(range(num_steps), leave=False):
             # plot_32_mnist(x_t,f'trajectory/{i}_mnist.jpeg')
@@ -121,7 +121,7 @@ def eval_fp_loss(n_batches_fp, batch_size_fp):
     data_iterator = iter(data_loader)
 
     with torch.no_grad():
-        for t in tqdm(torch.linspace(0.1,sde.T(),50, device=device)):
+        for t in tqdm(torch.linspace(0.1,sde.T,50, device=device)):
             fp_loss_ = 0
             n_items = 0 
             for _ in tqdm(range(n_batches_fp),leave=False):

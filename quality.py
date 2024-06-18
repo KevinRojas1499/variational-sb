@@ -47,7 +47,7 @@ def fp_quality_evaluation(**opts):
     if opts.eval_fp:
         samples_fig = go.Figure()
         for i, model in enumerate(models):
-            for t in torch.linspace(0.1,sde.T(),50, device=device):
+            for t in torch.linspace(0.1,sde.T,50, device=device):
                 t_shape = t.unsqueeze(-1).expand(num_samples,1)
                 fp_loss = losses.fp_loss(sde,data,model,t_shape)
                 wandb.log({
@@ -84,7 +84,7 @@ def fp_quality_evaluation(**opts):
 def plot_score_over_time(device, sde, model_names, models):
     num_x = 100
     x_pts = torch.linspace(-10,10,steps=num_x, device=device).unsqueeze(-1)
-    for t in torch.linspace(0.1,sde.T(),1, device=device):
+    for t in torch.linspace(0.1,sde.T,1, device=device):
         fig = go.Figure()
         t_shape = t.unsqueeze(-1).expand(num_x,1)
         for i, model in enumerate(models):

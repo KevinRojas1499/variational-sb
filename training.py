@@ -44,7 +44,7 @@ def default_log_rate(ctx, param, value):
 @click.option('--model_forward',type=click.Choice(['mlp','toy','linear']), default='mlp')
 @click.option('--model_backward',type=click.Choice(['mlp','toy','linear']), default='mlp')
 @click.option('--precondition', is_flag=True, default=False)
-@click.option('--sde',type=click.Choice(['vp','sb','edm']), default='vp')
+@click.option('--sde',type=click.Choice(['vp','sb','edm', 'linear-sb']), default='vp')
 @click.option('--optimizer',type=click.Choice(['adam','adamw']), default='adam')
 @click.option('--lr', type=float, default=3e-3)
 @click.option('--ema_beta', type=float, default=.99)
@@ -58,8 +58,7 @@ def training(**opts):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     dataset = get_dataset(opts)
     dim = dataset.dim
-    is_sb = (opts.sde == 'sb')
-    
+    is_sb = (opts.sde in ['sb','linear-sb'])
     sde = get_sde(opts.sde)
     sampling_sde = get_sde(opts.sde)
     # Set up backwards model

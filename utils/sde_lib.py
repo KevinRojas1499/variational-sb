@@ -44,7 +44,7 @@ class SDE(abc.ABC):
       xt = self.prior_sampling(shape,device) if backward else in_cond
       assert xt is not None
       n_time_pts = 100      
-      time_pts = torch.linspace(0., self.T(), n_time_pts, device=device)
+      time_pts = torch.linspace(0., self.T, n_time_pts, device=device)
       trajectories = torch.empty((xt.shape[0], n_time_pts-1, *xt.shape[1:]),device=xt.device) 
 
       for i, t in enumerate(time_pts):
@@ -52,7 +52,7 @@ class SDE(abc.ABC):
           break
         dt = time_pts[i+1] - t 
         dt = -dt if backward else dt 
-        t_shape = self.T() - t if backward else t
+        t_shape = self.T - t if backward else t
         t_shape = t_shape.unsqueeze(-1).expand(xt.shape[0],1)
         if prob_flow:
           drift = self.probability_flow_drift(xt,t_shape)
@@ -157,8 +157,7 @@ class EDM(LinearSDE):
     return self.beta(t)**.5
 
   def prior_sampling(self, shape, device):
-    return torch.randn(*shape, dtype=torch.float, device=device) * self.marginal_prob_std(self.T())
-
+    return torch.randn(*shape, dtype=torch.float, device=device) * self.marginal_prob_std(self.T)
 
 class SchrodingerBridge(SDE):
   """ 
@@ -240,39 +239,40 @@ class SchrodingerBridge(SDE):
     return -.5 * beta * (xt - self.forward_score(xt,t) \
       + self.backward_score(xt, t))
 
-class VariationaLinearlDrift():
-  
-  def __init__(self,dim, net):
-    super().__init__()
-    self.dim = dim
-    self.A = net
-    self.identity = torch.eye(dim).unsqueeze(0)
-    # 0 Initialization is important so that it pushes to a standard normal
-    # torch.nn.init.constant_(self.A.weight,0)
-    # torch.nn.init.constant_(self.A.bias,0)
-  
-  def forward(self, t):
-    mat = self.A(t).reshape(-1, self.dim, self.dim) 
-    return self.identity - 2 * (mat + mat.mT)
-
 class LinearSchrodingerBridge(LinearSDE, SchrodingerBridge):
   """ 
     Note that this is not a general SB, it is implemented so that after optimized
     the linear drift transports to a standard normal
   """
-  def __init__(self,dim, device, T=1.,delta=1e-3, beta_min=0.1, beta_max=5, forward_model=None, backward_model=None):
+  def __init__(self,T=1.,delta=1e-3, beta_min=0.1, beta_max=5, forward_model=None, backward_model=None):
     """ Here the backward model is a standard backwards score
         The forward model is such that it receives t of shape [bs,1] and outputs a matrix [bs, d,d]
+        The dimension is infered from the forward model, so if it doesn't behave in this way it won't work
+        We internally assign the forward model to be the multiplication against this matrix
     """
     super().__init__()
     self._T = T
     self.delta = delta
     self.beta_min = beta_min
     self.beta_max = beta_max
-    self.D = VariationaLinearlDrift(dim,forward_model).to(device=device).requires_grad_(True)
-    self.dim = self.D.dim
+    self.At = forward_model
     self.backward_score = backward_model
-    
+
+  @property
+  def forward_score(self):
+    return lambda x,t : batch_matrix_product(self.At(t), x)
+  
+  @forward_score.setter
+  def forward_score(self,forward_model):
+    self.At = forward_model
+  
+  def D(self,t):
+    # TODO: Think of a better way to keep the device for identity
+    mat = self.At(t) 
+    id = torch.eye(mat.shape[-1], device=mat.device).unsqueeze(0)
+    return id - 2 * (mat + mat.mT)
+
+  @property
   def T(self):
     return self._T
   
@@ -294,7 +294,7 @@ class LinearSchrodingerBridge(LinearSDE, SchrodingerBridge):
     multipliers = multipliers.view(1,-1,1,1)
     Ats = self.D(time_pts.view(-1,1))
     Ats = Ats.view(-1,num_pts, Ats.shape[-1], Ats.shape[-1])
-    betas = self.beta(time_pts).unsqueeze(-1)
+    betas = self.beta(time_pts)#.unsqueeze(-1)
     return torch.sum(betas * Ats * multipliers,dim=1) * dt.unsqueeze(-1)/3
 
   def compute_variance(self, t):
@@ -330,15 +330,19 @@ class LinearSchrodingerBridge(LinearSDE, SchrodingerBridge):
     cov, L, invL, _ = self.compute_variance(t)
     return mat @ L
   
-  def drift(self, x,t):
-    return - .5 * self.beta(t) * batch_matrix_product(self.D(t), x) 
-  
+  def drift(self, x,t,forward=True):
+    beta = self.beta(t)
+    if forward:
+      return - .5 * beta * batch_matrix_product(self.D(t), x) 
+    else:
+      return -.5 * beta * (x - 2 * self.backward_score(x,t) )
   def diffusion(self, x,t):
     return self.beta(t)**.5
   
   def prior_sampling(self, shape, device):
     # return torch.randn(*shape, dtype=torch.float, device=device)
-    L = self.compute_variance(torch.tensor([[self.T()]],device=device))[1][0]
+    L = self.compute_variance(torch.tensor([[self.T]],device=device))[1][0]
+    print(L)
     return (L @ torch.randn(*shape, dtype=torch.float, device=device).T).T
 
 
@@ -442,9 +446,11 @@ class CLD(SDE):
 def get_sde(sde_name):
   if sde_name == 'vp':
     return VP()
-  if sde_name == 'edm':
+  elif sde_name == 'edm':
     return EDM()
-  if sde_name == 'sb':
+  elif sde_name == 'sb':
     return SchrodingerBridge()
+  elif sde_name == 'linear-sb':
+    return LinearSchrodingerBridge()
   elif sde_name == 'cld':
     return CLD()

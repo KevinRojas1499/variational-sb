@@ -5,7 +5,7 @@ from utils.misc import batch_matrix_product
 
 def dsm_loss(sde : SDEs.SDE,data, model):
     eps = sde.delta
-    times = (torch.rand((data.shape[0]),device=data.device) * (1-eps) + eps) * sde.T()
+    times = (torch.rand((data.shape[0]),device=data.device) * (1-eps) + eps) * sde.T
     shaped_t = times.reshape(-1,1,1,1) if len(data.shape) > 2 else times.reshape(-1,1)
     mean, variance = sde.marginal_prob(data,shaped_t)
     noise = torch.randn_like(mean,device=data.device)
@@ -16,7 +16,7 @@ def dsm_loss(sde : SDEs.SDE,data, model):
 
 def standard_sb_loss(sde : SDEs.SchrodingerBridge, data, model=None):
     n_times = 100
-    time_pts = torch.linspace(0., sde.T(),n_times, device=data.device)
+    time_pts = torch.linspace(0., sde.T,n_times, device=data.device)
 
     return sde.eval_sb_loss(data,time_pts)
     
@@ -24,7 +24,7 @@ def standard_sb_loss(sde : SDEs.SchrodingerBridge, data, model=None):
 def denoising_sb_loss(sde : SDEs.LinearSchrodingerBridge,data, model):
     # This one assumes that we are parametrizing a denoiser
     eps = sde.delta
-    times = (torch.rand((data.shape[0]),device=data.device) * (1-eps) + eps) * sde.T()
+    times = (torch.rand((data.shape[0]),device=data.device) * (1-eps) + eps) * sde.T
     shaped_t = times.reshape(-1,1,1,1) if len(data.shape) > 2 else times.reshape(-1,1)
     L_hat = sde.unscaled_marginal_prob_std(shaped_t)
     noise = torch.randn_like(data,device=data.device)
@@ -33,9 +33,9 @@ def denoising_sb_loss(sde : SDEs.LinearSchrodingerBridge,data, model):
     
     return torch.mean(torch.sum(flatten_error,dim=1))
 
-def naive_sb_loss(sde : SDEs.SDE,data, model):
+def linear_sb_loss(sde : SDEs.LinearSchrodingerBridge,data, model):
     eps = sde.delta
-    times = (torch.rand((data.shape[0]),device=data.device) * (1-eps) + eps) * sde.T()
+    times = (torch.rand((data.shape[0]),device=data.device) * (1-eps) + eps) * sde.T
     shaped_t = times.reshape(-1,1,1,1) if len(data.shape) > 2 else times.reshape(-1,1)
     mean, L, invL, max_eig = sde.marginal_prob(data,shaped_t)
     noise = torch.randn_like(mean,device=data.device)
@@ -46,7 +46,7 @@ def naive_sb_loss(sde : SDEs.SDE,data, model):
 
 def cld_loss(sde : SDEs.CLD,data, model):
     eps = sde.delta
-    times = (torch.rand((data.shape[0]) ,device=data.device) * (1-eps) + eps) * sde.T()
+    times = (torch.rand((data.shape[0]) ,device=data.device) * (1-eps) + eps) * sde.T
     shaped_t = times.reshape(-1,1,1,1) if len(data.shape) > 2 else times.reshape(-1,1)
     ext_data = torch.cat((data,torch.randn_like(data)),dim=1) # Add velocity
     mean = sde.marginal_prob_mean(ext_data,shaped_t)
@@ -61,5 +61,9 @@ def cld_loss(sde : SDEs.CLD,data, model):
 def get_loss(sde_name):
     if sde_name == 'vp':
         return dsm_loss
+    if sde_name == 'sb':
+        return standard_sb_loss
+    elif sde_name == 'linear-sb':
+        return linear_sb_loss
     elif sde_name == 'cld':
         return cld_loss
