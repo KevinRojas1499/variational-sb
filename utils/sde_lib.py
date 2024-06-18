@@ -62,8 +62,16 @@ class SDE(abc.ABC):
           xt = xt + drift * dt + torch.randn_like(xt) * self.diffusion(xt,t) * dt.abs().sqrt()
         trajectories[:,i] = xt
       return xt, trajectories
-  
-class VP(SDE):
+
+class LinearSDE(SDE):
+  def __init__(self):
+    super().__init__()
+    
+  @abc.abstractmethod
+  def marginal_prob(self, x, t):
+    """ Returns the marginal prob dist """
+    pass  
+class VP(LinearSDE):
 
   def __init__(self,T=1.,delta=1e-3, beta_min=0.1, beta_max=5, model_backward=None):
     # dX = - .5 (beta_min + beta_max * t) X_t dt + (...) dW
@@ -72,7 +80,7 @@ class VP(SDE):
     self.delta = delta
     self.beta_min = beta_min
     self.beta_max = beta_max
-    self.model_backward = model_backward
+    self.backward_score = model_backward
 
   def T(self):
     return self._T
@@ -97,11 +105,11 @@ class VP(SDE):
     if forward:
       return -.5 * self.beta(t) * x
     else:
-      return -.5 * self.beta(t) * x - self.beta(t) * self.model_backward(x,t)
+      return -.5 * self.beta(t) * x - self.beta(t) * self.backward_score(x,t)
   
   def probability_flow_drift(self, xt, t):
     beta = self.beta(t)
-    return -.5 * beta * (xt + self.model_backward(xt,t))
+    return -.5 * beta * (xt + self.backward_score(xt,t))
   
   def diffusion(self, x,t):
     return self.beta(t)**.5
@@ -109,14 +117,14 @@ class VP(SDE):
   def prior_sampling(self, shape, device):
     return torch.randn(*shape, dtype=torch.float, device=device)
 
-class EDM(SDE):
+class EDM(LinearSDE):
 
   def __init__(self,T=80.,delta=1e-3, model_backward=None):
     # dX = - .5 (beta_min + beta_max * t) X_t dt + (...) dW
     super().__init__()
     self._T = T
     self.delta = delta
-    self.model_backward = model_backward
+    self.backward_score = model_backward
 
   def T(self):
     return self._T
@@ -140,10 +148,10 @@ class EDM(SDE):
     if forward:
       return 0.
     else:
-      return 0. - self.beta(t) * self.model_backward(x,t)
+      return 0. - self.beta(t) * self.backward_score(x,t)
   
   def probability_flow_drift(self, xt, t):
-    return - .5 * self.beta(t) * self.model_backward(xt,t)
+    return - .5 * self.beta(t) * self.backward_score(xt,t)
   
   def diffusion(self, x,t):
     return self.beta(t)**.5
@@ -151,141 +159,13 @@ class EDM(SDE):
   def prior_sampling(self, shape, device):
     return torch.randn(*shape, dtype=torch.float, device=device) * self.marginal_prob_std(self.T())
 
-class VariationaLinearlDrift(nn.Module):
-  
-  def __init__(self,dim):
-    super().__init__()
-    self.dim = dim
-    self.A = nn.Linear(1,dim * dim)
-    self.register_buffer('identity',torch.eye(dim).unsqueeze(0))
-    # 0 Initialization is important so that it pushes to a standard normal
-    # torch.nn.init.constant_(self.A.weight,0)
-    # torch.nn.init.constant_(self.A.bias,0)
-    print(self.A.bias.view(dim,dim))
-  
-  def forward(self, t):
-    mat = self.A(t).reshape(-1, self.dim, self.dim) 
-    return self.identity - 2 * (mat + mat.mT)
-
-class LinearSchrodingerBridge(SDE):
-  """ 
-    Note that this is not a general SB, it is implemented so that after optimized
-    the linear drift transports to a standard normal
-  """
-  def __init__(self,dim, device, T=1.,delta=1e-3, beta_min=0.1, beta_max=5):
-    # dX = - .5 (beta_min + beta_max * t) X_t dt + (...) dW
-    super().__init__()
-    self._T = T
-    self.delta = delta
-    self.beta_min = beta_min
-    self.beta_max = beta_max
-    self.D = VariationaLinearlDrift(dim).to(device=device).requires_grad_(True)
-    self.dim = self.D.dim
-
-  def T(self):
-    return self._T
-  
-  def beta(self, t):
-    return 2 * self.beta_max * t
-  
-  def beta_int(self, t):
-    return self.beta_max * t**2
-  
-  def int_beta_ds(self, t):
-    # Curently using Simpsons Method
-    num_pts = 1000
-    t_shape = t.unsqueeze(-1).expand(-1,num_pts,-1)
-    dt = t/num_pts
-    time_pts = torch.arange(num_pts,device=t.device).unsqueeze(-1) * t_shape/num_pts
-    multipliers = torch.ones(num_pts, device=t.device)
-    multipliers[1:-1:2] = 4
-    multipliers[2:-1:2] = 2
-    multipliers = multipliers.view(1,-1,1,1)
-    Ats = self.D(time_pts.view(-1,1))
-    Ats = Ats.view(-1,num_pts, Ats.shape[-1], Ats.shape[-1])
-    betas = self.beta(time_pts).unsqueeze(-1)
-    return torch.sum(betas * Ats * multipliers,dim=1) * dt.unsqueeze(-1)/3
-
-  def compute_variance(self, t):
-    int_mat = self.int_beta_ds(t)
-    # beta_integral = self.beta_int(t)
-    # int_mat = self.A(t) * beta_integral.view(-1,1,1)
-    dim = int_mat.shape[-1]
-    ch_power = torch.zeros((t.shape[0], 2 * dim, 2 * dim),device=int_mat.device)
-    ch_power[:,:dim, :dim] = -.5 * int_mat
-    ch_power[:,dim:, dim:] = .5 * int_mat.mT
-    ch_power[:, :dim, dim:] = self.beta_int(t).view(-1,1,1) * torch.eye(dim,device=int_mat.device).unsqueeze(0).expand(t.shape[0],-1,-1)
-    ch_pair = torch.linalg.matrix_exp(ch_power)
-    C = ch_pair[:, :dim, dim:]
-    H_inv = ch_pair[:, :dim, :dim]
-    cov = C @ H_inv
-    diag, Q = torch.linalg.eigh(cov)
-    L = Q @ torch.diag_embed(diag.sqrt()) @ Q.mH
-    invL = Q @ torch.diag_embed(1/(diag.sqrt())) @ Q.mH
-    max_eig = diag[:,-1].unsqueeze(-1)
-    return cov, L, invL, max_eig
-  
-  def marginal_prob_std(self, t):
-    return self.compute_variance(t)[1]
-  
-  def marginal_prob(self, x, t):
-    # If    x is of shape [B, H, W, C]
-    # then  t is of shape [B, 1, 1, 1] 
-    # And similarly for other shapes
-    big_beta = (-.5 * self.int_beta_ds(t)).matrix_exp()
-    cov, L, invL, max_eig = self.compute_variance(t)
-    return batch_matrix_product(big_beta, x), L, invL, max_eig
-  
-  def unscaled_marginal_prob_std(self, t):
-    mat = (.5 * self.int_beta_ds(t)).matrix_exp()
-    cov, L, invL, _ = self.compute_variance(t)
-    return mat @ L
-  
-  def drift(self, x,t):
-    return - .5 * self.beta(t) * batch_matrix_product(self.D(t), x) 
-  
-  def diffusion(self, x,t):
-    return self.beta(t)**.5
-
-  def eval_sb_loss(self, in_cond, time_pts, model):
-    n_time_pts = time_pts.shape[0]
-    # trajectories = torch.empty((in_cond.shape[0], n_time_pts, *in_cond.shape[1:]),device=in_cond.device) 
-    # scores = torch.empty_like(trajectories)
-    xt = in_cond.detach().clone().requires_grad_(True)
-    loss = 0
-    for i, t in enumerate(time_pts):
-      if i == n_time_pts - 1:
-        break
-      dt = time_pts[i+1] - t
-      drift = self.drift(xt,t)
-      xt = xt + drift * dt + torch.randn_like(xt) * self.diffusion(xt,t) * dt.abs().sqrt()
-      # trajectories[:,i] = xt
-      # We have to compute this score by hand to recover the linearized part
-      # scores[:,i] = diffusion -  (- .5 * self.beta(t) * xt)
-      forward_score = drift -  (- .5 * self.beta(t) * xt)
-      # Now we compare against the backwards process
-      t_shape = t.unsqueeze(-1).expand(xt.shape[0],1)
-      backward_score = model(xt,self.T() - t_shape)
-      
-      div_term = self.beta(t) * (batch_div_exact(backward_score.view(-1,xt.shape[-1]),xt,t_shape) + self.dim) 
-      loss += torch.sum((.5 * self.beta(t_shape) * backward_score + forward_score)**2) \
-        + torch.mean(div_term)
-    loss = dt * loss
-    loss += .5 * torch.mean(torch.sum(xt**2,dim=-1))  + .5 * self.dim * log(2*pi)
-    return loss
-  
-  def prior_sampling(self, shape, device):
-    return torch.randn(*shape, dtype=torch.float, device=device)
-    L = self.compute_variance(torch.tensor([[self.T()]],device=device))[1][0]
-    return (L @ torch.randn(*shape, dtype=torch.float, device=device).T).T
-
 
 class SchrodingerBridge(SDE):
   """ 
     Note that this is not a general SB, it is implemented so that after optimized
     the linear drift transports to a standard normal
   """
-  def __init__(self, forward_score, backward_score, T=1.,delta=1e-3, beta_min=0.1, beta_max=5):
+  def __init__(self, T=1.,delta=1e-3, beta_min=0.1, beta_max=5, forward_score=None, backward_score=None):
     super().__init__()
     self._T = T
     self.delta = delta
@@ -359,6 +239,108 @@ class SchrodingerBridge(SDE):
     beta = self.beta(t)
     return -.5 * beta * (xt - self.forward_score(xt,t) \
       + self.backward_score(xt, t))
+
+class VariationaLinearlDrift():
+  
+  def __init__(self,dim, net):
+    super().__init__()
+    self.dim = dim
+    self.A = net
+    self.identity = torch.eye(dim).unsqueeze(0)
+    # 0 Initialization is important so that it pushes to a standard normal
+    # torch.nn.init.constant_(self.A.weight,0)
+    # torch.nn.init.constant_(self.A.bias,0)
+  
+  def forward(self, t):
+    mat = self.A(t).reshape(-1, self.dim, self.dim) 
+    return self.identity - 2 * (mat + mat.mT)
+
+class LinearSchrodingerBridge(LinearSDE, SchrodingerBridge):
+  """ 
+    Note that this is not a general SB, it is implemented so that after optimized
+    the linear drift transports to a standard normal
+  """
+  def __init__(self,dim, device, T=1.,delta=1e-3, beta_min=0.1, beta_max=5, forward_model=None, backward_model=None):
+    """ Here the backward model is a standard backwards score
+        The forward model is such that it receives t of shape [bs,1] and outputs a matrix [bs, d,d]
+    """
+    super().__init__()
+    self._T = T
+    self.delta = delta
+    self.beta_min = beta_min
+    self.beta_max = beta_max
+    self.D = VariationaLinearlDrift(dim,forward_model).to(device=device).requires_grad_(True)
+    self.dim = self.D.dim
+    self.backward_score = backward_model
+    
+  def T(self):
+    return self._T
+  
+  def beta(self, t):
+    return self.beta_max
+  
+  def beta_int(self, t):
+    return self.beta_max * t
+  
+  def int_beta_ds(self, t):
+    # Curently using Simpsons Method
+    num_pts = 1000
+    t_shape = t.unsqueeze(-1).expand(-1,num_pts,-1)
+    dt = t/num_pts
+    time_pts = torch.arange(num_pts,device=t.device).unsqueeze(-1) * t_shape/num_pts
+    multipliers = torch.ones(num_pts, device=t.device)
+    multipliers[1:-1:2] = 4
+    multipliers[2:-1:2] = 2
+    multipliers = multipliers.view(1,-1,1,1)
+    Ats = self.D(time_pts.view(-1,1))
+    Ats = Ats.view(-1,num_pts, Ats.shape[-1], Ats.shape[-1])
+    betas = self.beta(time_pts).unsqueeze(-1)
+    return torch.sum(betas * Ats * multipliers,dim=1) * dt.unsqueeze(-1)/3
+
+  def compute_variance(self, t):
+    int_mat = self.int_beta_ds(t)
+    dim = int_mat.shape[-1]
+    ch_power = torch.zeros((t.shape[0], 2 * dim, 2 * dim),device=int_mat.device)
+    ch_power[:,:dim, :dim] = -.5 * int_mat
+    ch_power[:,dim:, dim:] = .5 * int_mat.mT
+    ch_power[:, :dim, dim:] = self.beta_int(t).view(-1,1,1) * torch.eye(dim,device=int_mat.device).unsqueeze(0).expand(t.shape[0],-1,-1)
+    ch_pair = torch.linalg.matrix_exp(ch_power)
+    C = ch_pair[:, :dim, dim:]
+    H_inv = ch_pair[:, :dim, :dim]
+    cov = C @ H_inv
+    diag, Q = torch.linalg.eigh(cov)
+    L = Q @ torch.diag_embed(diag.sqrt()) @ Q.mH
+    invL = Q @ torch.diag_embed(1/(diag.sqrt())) @ Q.mH
+    max_eig = diag[:,-1].unsqueeze(-1)
+    return cov, L, invL, max_eig
+  
+  def marginal_prob_std(self, t):
+    return self.compute_variance(t)[1]
+  
+  def marginal_prob(self, x, t):
+    # If    x is of shape [B, H, W, C]
+    # then  t is of shape [B, 1, 1, 1] 
+    # And similarly for other shapes
+    big_beta = (-.5 * self.int_beta_ds(t)).matrix_exp()
+    cov, L, invL, max_eig = self.compute_variance(t)
+    return batch_matrix_product(big_beta, x), L, invL, max_eig
+  
+  def unscaled_marginal_prob_std(self, t):
+    mat = (.5 * self.int_beta_ds(t)).matrix_exp()
+    cov, L, invL, _ = self.compute_variance(t)
+    return mat @ L
+  
+  def drift(self, x,t):
+    return - .5 * self.beta(t) * batch_matrix_product(self.D(t), x) 
+  
+  def diffusion(self, x,t):
+    return self.beta(t)**.5
+  
+  def prior_sampling(self, shape, device):
+    # return torch.randn(*shape, dtype=torch.float, device=device)
+    L = self.compute_variance(torch.tensor([[self.T()]],device=device))[1][0]
+    return (L @ torch.randn(*shape, dtype=torch.float, device=device).T).T
+
 
 class CLD(SDE):
   # We assume that images have shape [B, C, H, W] 
@@ -463,6 +445,6 @@ def get_sde(sde_name):
   if sde_name == 'edm':
     return EDM()
   if sde_name == 'sb':
-    return LinearSchrodingerBridge()
+    return SchrodingerBridge()
   elif sde_name == 'cld':
     return CLD()

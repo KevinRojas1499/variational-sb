@@ -7,7 +7,7 @@ from tqdm import tqdm
 from itertools import chain
 from torch.optim import Adam
 
-from utils.sde_lib import SchrodingerBridge, VP, get_sde
+from utils.sde_lib import get_sde
 import utils.losses as losses
 from utils.model_utils import get_model, get_preconditioned_model
 from utils.datasets import get_dataset
@@ -58,23 +58,23 @@ def training(**opts):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     dataset = get_dataset(opts)
     dim = dataset.dim
-    is_sb = opts.sde == 'sb'
+    is_sb = (opts.sde == 'sb')
     
     sde = get_sde(opts.sde)
     sampling_sde = get_sde(opts.sde)
     # Set up backwards model
     model_backward, ema_backward = get_model(opts.model_backward,device)
-    sde.model_backward = model_backward
-    sampling_sde.model_backward = model_backward
+    sde.backward_score = model_backward
+    sampling_sde.backward_score = model_backward
     if is_sb:
         # We need a forward model
         model_forward , ema_forward  = get_model(opts.model_forward,device)
-        sde.model_forward = model_forward
-        sampling_sde.model_forward = model_forward
+        sde.forward_score = model_forward
+        sampling_sde.forward_score = model_forward
         
     if opts.precondition:
-        sde.model_backward = get_preconditioned_model(model_backward, sde)
-        sampling_sde.model_backward = get_preconditioned_model(model_backward, sde)
+        sde.backward_score = get_preconditioned_model(model_backward, sde)
+        sampling_sde.backward_score = get_preconditioned_model(model_backward, sde)
         
     opt = Adam(chain(model_forward.parameters(), model_backward.parameters()) 
                if is_sb else model_backward.parameters(), lr=opts.lr )

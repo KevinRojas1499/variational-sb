@@ -27,7 +27,25 @@ class MLP(nn.Module):
         h = torch.cat([x, t.reshape(-1, 1)], dim=1)
         
         return self.sequential(h)
-    
+
+class MatrixTimeEmbedding(nn.Module):
+    def __init__(self, dim) -> None:
+        super().__init__()
+        self.dim = dim
+        self.sequential = nn.Sequential(
+            nn.Linear(1,128),
+            nn.SiLU(),
+            nn.Linear(128,256),
+            nn.SiLU(),
+            nn.Linear(256,128),
+            nn.SiLU(),
+            nn.Linear(128,dim * dim)
+        )
+        
+    def forward(self,t):
+        t = t.flatten().unsqueeze(-1)
+        return self.sequential(t).view(-1,self.dim,self.dim)
+
 class LinearMLP(nn.Module):
     def __init__(self, dim, augmented_sde) -> None:
         super().__init__()
