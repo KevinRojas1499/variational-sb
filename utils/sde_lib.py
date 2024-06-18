@@ -267,7 +267,6 @@ class LinearSchrodingerBridge(LinearSDE, SchrodingerBridge):
     self.At = forward_model
   
   def D(self,t):
-    # TODO: Think of a better way to keep the device for identity
     mat = self.At(t) 
     id = torch.eye(mat.shape[-1], device=mat.device).unsqueeze(0)
     return id - 2 * (mat + mat.mT)
@@ -333,14 +332,15 @@ class LinearSchrodingerBridge(LinearSDE, SchrodingerBridge):
   def drift(self, x,t,forward=True):
     beta = self.beta(t)
     if forward:
-      return - .5 * beta * batch_matrix_product(self.D(t), x) 
+      return -.5 * beta * batch_matrix_product(self.D(t), x) 
     else:
-      return -.5 * beta * (x - 2 * self.backward_score(x,t) )
+      return -.5 * beta * x - beta * self.backward_score(x,t)
+  
   def diffusion(self, x,t):
     return self.beta(t)**.5
   
   def prior_sampling(self, shape, device):
-    # return torch.randn(*shape, dtype=torch.float, device=device)
+    return torch.randn(*shape, dtype=torch.float, device=device)
     L = self.compute_variance(torch.tensor([[self.T]],device=device))[1][0]
     print(L)
     return (L @ torch.randn(*shape, dtype=torch.float, device=device).T).T
