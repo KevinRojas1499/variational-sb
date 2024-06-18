@@ -1,7 +1,6 @@
 """Abstract SDE classes, Reverse SDE, and VE/VP SDEs."""
 import abc
 import torch
-import torch.nn as nn
 from math import pi, log
 
 from utils.diff import batch_div_exact, hutch_div
@@ -73,12 +72,10 @@ class LinearSDE(SDE):
     pass  
 class VP(LinearSDE):
 
-  def __init__(self,T=1.,delta=1e-3, beta_min=0.1, beta_max=5, model_backward=None):
-    # dX = - .5 (beta_min + beta_max * t) X_t dt + (...) dW
+  def __init__(self,T=1.,delta=1e-3, beta_max=5, model_backward=None):
     super().__init__()
     self._T = T
     self.delta = delta
-    self.beta_min = beta_min
     self.beta_max = beta_max
     self.backward_score = model_backward
 
@@ -120,7 +117,6 @@ class VP(LinearSDE):
 class EDM(LinearSDE):
 
   def __init__(self,T=80.,delta=1e-3, model_backward=None):
-    # dX = - .5 (beta_min + beta_max * t) X_t dt + (...) dW
     super().__init__()
     self._T = T
     self.delta = delta
@@ -164,11 +160,10 @@ class SchrodingerBridge(SDE):
     Note that this is not a general SB, it is implemented so that after optimized
     the linear drift transports to a standard normal
   """
-  def __init__(self, T=1.,delta=1e-3, beta_min=0.1, beta_max=5, forward_score=None, backward_score=None):
+  def __init__(self, T=1.,delta=1e-3, beta_max=5, forward_score=None, backward_score=None):
     super().__init__()
     self._T = T
     self.delta = delta
-    self.beta_min = beta_min
     self.beta_max = beta_max
     self.forward_score = forward_score
     self.backward_score = backward_score
@@ -244,7 +239,7 @@ class LinearSchrodingerBridge(LinearSDE, SchrodingerBridge):
     Note that this is not a general SB, it is implemented so that after optimized
     the linear drift transports to a standard normal
   """
-  def __init__(self,T=1.,delta=1e-3, beta_min=0.1, beta_max=5, forward_model=None, backward_model=None):
+  def __init__(self,T=1.,delta=1e-3, beta_max=5, forward_model=None, backward_model=None):
     """ Here the backward model is a standard backwards score
         The forward model is such that it receives t of shape [bs,1] and outputs a matrix [bs, d,d]
         The dimension is infered from the forward model, so if it doesn't behave in this way it won't work
@@ -253,7 +248,6 @@ class LinearSchrodingerBridge(LinearSDE, SchrodingerBridge):
     super().__init__()
     self._T = T
     self.delta = delta
-    self.beta_min = beta_min
     self.beta_max = beta_max
     self.At = forward_model
     self.backward_score = backward_model
@@ -340,7 +334,7 @@ class LinearSchrodingerBridge(LinearSDE, SchrodingerBridge):
     return self.beta(t)**.5
   
   def prior_sampling(self, shape, device):
-    return torch.randn(*shape, dtype=torch.float, device=device)
+    # return torch.randn(*shape, dtype=torch.float, device=device)
     L = self.compute_variance(torch.tensor([[self.T]],device=device))[1][0]
     print(L)
     return (L @ torch.randn(*shape, dtype=torch.float, device=device).T).T
@@ -349,23 +343,22 @@ class LinearSchrodingerBridge(LinearSDE, SchrodingerBridge):
 class CLD(SDE):
   # We assume that images have shape [B, C, H, W] 
   # Additionally there has been added channels as momentum
-  def __init__(self,T=1.,delta=1e-3, gamma=2, beta_min=4., beta_max=0.):
+  def __init__(self,T=1.,delta=1e-3, gamma=2,beta_max=5.):
     super().__init__()
     self._T = T
     self.delta = delta
     self.gamma = gamma
     self.is_augmented = True
-    self.beta_min = beta_min
     self.beta_max = beta_max
 
   def T(self):
     return 1.
   
   def beta(self, t):
-    return self.beta_min + (self.beta_max - self.beta_min) * t 
+    return self.beta_max 
   
   def beta_int(self, t):
-    return (self.beta_min * t + (self.beta_max - self.beta_min) * t**2/2)/2
+    return self.beta_max  * t
   
   
   def get_exp_At_components(self, t):
