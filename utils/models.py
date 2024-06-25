@@ -29,9 +29,10 @@ class MLP(nn.Module):
         return self.sequential(h)
 
 class MatrixTimeEmbedding(nn.Module):
-    def __init__(self, dim) -> None:
+    def __init__(self, in_dim, out_dim) -> None:
         super().__init__()
-        self.dim = dim
+        self.in_dim = in_dim
+        self.out_dim = out_dim
         self.sequential = nn.Sequential(
             nn.Linear(1,128),
             nn.SiLU(),
@@ -39,12 +40,12 @@ class MatrixTimeEmbedding(nn.Module):
             nn.SiLU(),
             nn.Linear(256,128),
             nn.SiLU(),
-            nn.Linear(128,dim * dim)
+            nn.Linear(128,self.in_dim * out_dim)
         )
         
     def forward(self,t):
         t = t.flatten().unsqueeze(-1)
-        return self.sequential(t).view(-1,self.dim,self.dim)
+        return self.sequential(t).view(-1,self.out_dim,self.in_dim)
 
 class LinearMLP(nn.Module):
     def __init__(self, dim, augmented_sde) -> None:

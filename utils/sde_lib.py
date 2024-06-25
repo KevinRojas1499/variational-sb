@@ -333,7 +333,112 @@ class LinearSchrodingerBridge(LinearSDE, SchrodingerBridge):
   def prior_sampling(self, shape, device):
     # return torch.randn(*shape, dtype=torch.float, device=device)
     L = self.compute_variance(torch.tensor([[self.T]],device=device))[1][0]
-    print(L)
+    return (L @ torch.randn(*shape, dtype=torch.float, device=device).T).T
+
+
+class LinearMomentumSchrodingerBridge(LinearSDE, SchrodingerBridge):
+  """ 
+    Note that this is not a general SB, it is implemented so that after optimized
+    the linear drift transports to a standard normal
+  """
+  def __init__(self,T=1.,delta=1e-3, gamma=2., beta_max=5, forward_model=None, backward_model=None):
+    """ Here the backward model is a standard backwards score
+        The forward model is such that it receives t of shape [bs,1] and outputs a matrix [bs, d,d]
+        The dimension is infered from the forward model, so if it doesn't behave in this way it won't work
+        We internally assign the forward model to be the multiplication against this matrix
+    """
+    super().__init__()
+    self._T = T
+    self.delta = delta
+    self.beta_max = beta_max
+    self.gamma = gamma
+    self.At = forward_model #This grabs (x,v) and returns something of size v
+    self.backward_score = backward_model
+
+  @property
+  def forward_score(self):
+    return lambda x,t : batch_matrix_product(self.At(t), x)
+  
+  @forward_score.setter
+  def forward_score(self,forward_model):
+    self.At = forward_model
+  
+  def D(self,t):
+    mat = self.At(t) # Has shape [bs, d, 2d]
+    dim = mat.shape[-2]
+    Dt = torch.cat((torch.zeros_like(mat),- 2 * self.gamma * mat),dim=-2) # [bs,2d,2d]
+    print(Dt)
+    id = torch.eye(dim, device=mat.device).unsqueeze(0)
+    Dt[:,:dim, -dim:] -= id
+    Dt[:,-dim:, :dim] += id
+    Dt[:,-dim:, -dim:] += self.gamma * id
+    return Dt
+
+  @property
+  def T(self):
+    return self._T
+  
+  def beta(self, t):
+    return self.beta_max
+  
+  def beta_int(self, t):
+    return self.beta_max * t
+  
+  def int_beta_ds(self, t):
+    # Curently using Simpsons Method
+    num_pts = 1000
+    t_shape = t.unsqueeze(-1).expand(-1,num_pts,-1)
+    dt = t/num_pts
+    time_pts = torch.arange(num_pts,device=t.device).unsqueeze(-1) * t_shape/num_pts
+    multipliers = torch.ones(num_pts, device=t.device)
+    multipliers[1:-1:2] = 4
+    multipliers[2:-1:2] = 2
+    multipliers = multipliers.view(1,-1,1,1)
+    Ats = self.D(time_pts.view(-1,1))
+    Ats = Ats.view(-1,num_pts, Ats.shape[-1], Ats.shape[-1])
+    betas = self.beta(time_pts)#.unsqueeze(-1)
+    return torch.sum(betas * Ats * multipliers,dim=1) * dt.unsqueeze(-1)/3
+
+  def compute_variance(self, t):
+    int_mat = self.int_beta_ds(t)
+    dim = int_mat.shape[-1]
+    ch_power = torch.zeros((t.shape[0], 2 * dim, 2 * dim),device=int_mat.device)
+    ch_power[:,:dim, :dim] = -.5 * int_mat
+    ch_power[:,dim:, dim:] = .5 * int_mat.mT
+    ch_power[:, :dim, dim:] = self.beta_int(t).view(-1,1,1) * torch.eye(dim,device=int_mat.device).unsqueeze(0).expand(t.shape[0],-1,-1)
+    ch_pair = torch.linalg.matrix_exp(ch_power)
+    C = ch_pair[:, :dim, dim:]
+    H_inv = ch_pair[:, :dim, :dim].mH
+    cov = C @ H_inv
+    diag, Q = torch.linalg.eigh(cov)
+    L = Q @ torch.diag_embed(diag.sqrt()) @ Q.mH
+    invL = Q @ torch.diag_embed(1/(diag.sqrt())) @ Q.mH
+    return cov, L, invL
+  
+  def marginal_prob_std(self, t):
+    return self.compute_variance(t)[1]
+  
+  def marginal_prob(self, x, t):
+    # If    x is of shape [B, H, W, C]
+    # then  t is of shape [B, 1, 1, 1] 
+    # And similarly for other shapes
+    big_beta = (-.5 * self.int_beta_ds(t)).matrix_exp()
+    cov, L, invL = self.compute_variance(t)
+    return batch_matrix_product(big_beta, x), L, invL
+   
+  def drift(self, x,t,forward=True):
+    beta = self.beta(t)
+    if forward:
+      return -.5 * beta * batch_matrix_product(self.D(t), x) 
+    else:
+      return -.5 * beta * x - beta * self.backward_score(x,t)
+  
+  def diffusion(self, x,t):
+    return (self.gamma * self.beta(t))**.5
+  
+  def prior_sampling(self, shape, device):
+    return torch.randn(*shape, dtype=torch.float, device=device)
+    L = self.compute_variance(torch.tensor([[self.T]],device=device))[1][0]
     return (L @ torch.randn(*shape, dtype=torch.float, device=device).T).T
 
 
