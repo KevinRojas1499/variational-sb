@@ -7,35 +7,28 @@ from utils.diff import batch_div_exact, hutch_div
 from utils.misc import batch_matrix_product
 
 class SDE(abc.ABC):
-  """SDE abstract class. Functions are designed for a mini-batch of inputs."""
-
   def __init__(self):
     super().__init__()
 
   @property
   @abc.abstractmethod
   def T(self):
-    """End time of the SDE."""
     pass
 
   @abc.abstractmethod
   def prior_sampling(self, shape):
-    """Generate one sample from the prior distribution, $p_T(x)$."""
     pass
   
   @abc.abstractmethod
   def drift(self, x,t, forward=True):
-    """Drift of the SDE"""
     pass
   
   @abc.abstractmethod
   def diffusion(self, x,t, forward=True):
-    """Diffusion of the SDE"""
     pass
   
   @abc.abstractmethod
   def probability_flow_drift(self, xt, t):
-    """Probability flow drift"""
     pass
   
   def sample(self, shape, device, backward=True, in_cond=None, prob_flow=False):
@@ -79,6 +72,7 @@ class VP(LinearSDE):
     self.beta_max = beta_max
     self.backward_score = model_backward
 
+  @property
   def T(self):
     return self._T
   
@@ -99,10 +93,11 @@ class VP(LinearSDE):
     return (1 - torch.exp(-self.beta_int(t)))**.5
   
   def drift(self, x,t, forward=True):
+    beta = self.beta(t)
     if forward:
-      return -.5 * self.beta(t) * x
+      return -.5 * beta * x
     else:
-      return -.5 * self.beta(t) * x - self.beta(t) * self.backward_score(x,t)
+      return -.5 * beta * x - beta * self.backward_score(x,t)
   
   def probability_flow_drift(self, xt, t):
     beta = self.beta(t)
@@ -122,6 +117,7 @@ class EDM(LinearSDE):
     self.delta = delta
     self.backward_score = model_backward
 
+  @property
   def T(self):
     return self._T
   
@@ -168,6 +164,7 @@ class SchrodingerBridge(SDE):
     self.forward_score = forward_score
     self.backward_score = backward_score
 
+  @property
   def T(self):
     return self._T
   
@@ -343,16 +340,18 @@ class LinearSchrodingerBridge(LinearSDE, SchrodingerBridge):
 class CLD(SDE):
   # We assume that images have shape [B, C, H, W] 
   # Additionally there has been added channels as momentum
-  def __init__(self,T=1.,delta=1e-3, gamma=2,beta_max=5.):
+  def __init__(self,T=1.,delta=1e-3, gamma=2,beta_max=5., model_backward=None):
     super().__init__()
     self._T = T
     self.delta = delta
     self.gamma = gamma
     self.is_augmented = True
     self.beta_max = beta_max
+    self.backward_score = model_backward
 
+  @property
   def T(self):
-    return 1.
+    return self._T
   
   def beta(self, t):
     return self.beta_max 
@@ -369,9 +368,8 @@ class CLD(SDE):
   def marginal_prob_mean(self, z, t):
     x, v = torch.chunk(z,2,dim=1) # Decompose in channels    
     a,b,c,d = self.get_exp_At_components(t)
-    exp  = torch.exp(-b) 
-    new_x = exp * ((b+1) * x + b * v)
-    new_v = exp * (-b * x + (1-b) * v)
+    new_x = a * x + b * v
+    new_v = c * x + d * v
     return torch.cat((new_x,new_v),dim=1)
     
   
@@ -408,11 +406,6 @@ class CLD(SDE):
     x, v = z.chunk(2,dim=1)
     return torch.cat((a * x, c * x  + d * v), dim=1)
 
-  def multiply_inv_std(self, z, t):
-    a, c, d = self.marginal_prob_std(t)
-    x, v = z.chunk(2,dim=1)
-    return torch.cat((a * v, d * x - c * v), dim=1)/ (a*d)
-
   def marginal_prob(self, z, t):
     # Returns mean, std
     mean = self.marginal_prob_mean(z,t)
@@ -420,20 +413,57 @@ class CLD(SDE):
     
     return mean, (a, c, d)
   
-  def drift(self, z,t):
+  def drift(self, z,t, forward=True):
     x,v = torch.chunk(z,2,dim=-1)
-    
-    d_x = v
-    d_v = -x - self.gamma * v
-    return torch.cat((d_x,d_v),dim=-1)
+    beta = self.beta(t)
+    d_x = beta * v
+    d_v = beta * (-x - self.gamma * v)
+    if forward:
+      return torch.cat((d_x,d_v),dim=-1)
+    else:
+      return torch.cat((d_x, d_v - self.diffusion(z,t)**2 * self.backward_score(z,t)),dim=-1)
+
+  def probability_flow_drift(self, z,t):
+    x,v = torch.chunk(z,2,dim=-1)
+    beta = self.beta(t)
+    d_x =  beta * v
+    d_v =  beta * (-x - self.gamma * v)
+    return torch.cat((d_x, d_v - self.gamma * beta * self.backward_score(z,t)),dim=-1)
   
   def diffusion(self, z,t):
-    x,v = torch.chunk(z,2,dim=-1)
-    # TODO : DO 
-    return 2**.5
+    return (2 * self.beta(t) * self.gamma)**.5
   
   def prior_sampling(self, shape, device):
     return torch.randn(*shape, dtype=torch.float, device=device)
+  
+  def sample(self, shape, device, backward=True, in_cond=None, prob_flow=False):
+    
+    with torch.no_grad():
+      zt = self.prior_sampling(shape,device) if backward else in_cond
+      
+      assert zt is not None
+      n_time_pts = 100      
+      time_pts = torch.linspace(0., self.T, n_time_pts, device=device)
+      trajectories = torch.empty((zt.shape[0], n_time_pts-1, *zt.shape[1:]),device=zt.device) 
+
+      for i, t in enumerate(time_pts):
+        if i == n_time_pts - 1:
+          break
+        dt = time_pts[i+1] - t 
+        dt = -dt if backward else dt 
+        t_shape = self.T - t if backward else t
+        t_shape = t_shape.unsqueeze(-1).expand(zt.shape[0],1)
+        if prob_flow:
+          drift = self.probability_flow_drift(zt,t_shape)
+          zt = zt + drift * dt
+        else:
+          drift = self.drift(zt,t_shape, forward=(not backward))
+          zt = zt + drift * dt 
+          xt,vt = torch.chunk(zt,2,dim=-1)
+          vt = vt + torch.randn_like(vt) * self.diffusion(zt,t) * dt.abs().sqrt()
+          zt = torch.cat((xt,vt),dim=-1)
+        trajectories[:,i] = zt
+      return zt, trajectories
   
 
 def get_sde(sde_name):

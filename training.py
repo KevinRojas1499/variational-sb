@@ -32,19 +32,19 @@ def default_num_iters(ctx, param, value):
     sde = ctx.params.get('sde')
     if value is not None: 
         return value
-    return 2000 if sde == 'sb' else 30000
+    return 2000 if sde == 'sb' else 10000
 def default_log_rate(ctx, param, value):
     sde = ctx.params.get('sde')
     if value is not None: 
         return value
-    return 500 if sde == 'sb' else 5000
+    return 500 if sde == 'sb' else 2000
 
 @click.command()
 @click.option('--dataset',type=click.Choice(['gmm','spiral','checkerboard']))
 @click.option('--model_forward',type=click.Choice(['mlp','toy','linear']), default='mlp')
 @click.option('--model_backward',type=click.Choice(['mlp','toy','linear']), default='mlp')
 @click.option('--precondition', is_flag=True, default=False)
-@click.option('--sde',type=click.Choice(['vp','sb','edm', 'linear-sb']), default='vp')
+@click.option('--sde',type=click.Choice(['vp','cld','sb','edm', 'linear-sb']), default='vp')
 @click.option('--optimizer',type=click.Choice(['adam','adamw']), default='adam')
 @click.option('--lr', type=float, default=3e-3)
 @click.option('--ema_beta', type=float, default=.99)
@@ -62,12 +62,12 @@ def training(**opts):
     sde = get_sde(opts.sde)
     sampling_sde = get_sde(opts.sde)
     # Set up backwards model
-    model_backward, ema_backward = get_model(opts.model_backward,device)
+    model_backward, ema_backward = get_model(opts.model_backward,sde, device)
     sde.backward_score = model_backward
     sampling_sde.backward_score = model_backward
     if is_sb:
         # We need a forward model
-        model_forward , ema_forward  = get_model(opts.model_forward,device)
+        model_forward , ema_forward  = get_model(opts.model_forward,sde,device)
         sde.forward_score = model_forward
         sampling_sde.forward_score = model_forward
         
@@ -82,6 +82,8 @@ def training(**opts):
     log_sample_quality=opts.log_rate
 
     loss_fn = losses.standard_sb_loss if is_sb else losses.dsm_loss 
+    loss_fn = losses.cld_loss if opts.sde == 'cld' else loss_fn
+    
     init_wandb(opts)
     for i in tqdm(range(num_iters)):
         data = dataset.sample(batch_size).to(device=device)
@@ -103,10 +105,11 @@ def training(**opts):
         })
         # Evaluate sample accuracy
         if (i+1)%log_sample_quality == 0 or i+1 == num_iters:
-            new_data, _ = sde.sample((1000,2), device)
-            new_data_ema, _  = sampling_sde.sample((1000,2), device)
+            sampling_shape = (1000,4) if opts.sde == 'cld' else (1000,2) 
+            new_data, _ = sde.sample(sampling_shape, device)
+            new_data_ema, _  = sampling_sde.sample(sampling_shape, device)
             fig = create_figs(dim, [data, new_data, new_data_ema], ['true','normal', 'ema'])
-            wandb.log({'w2': get_w2(new_data,data), 'w2-ema': get_w2(new_data_ema, data),'samples': fig })
+            wandb.log({'samples': fig })
             
             path = os.path.join(opts.dir, f'itr_{i+1}/')
             os.makedirs(path,exist_ok=True) # Still wondering it this is the best idea

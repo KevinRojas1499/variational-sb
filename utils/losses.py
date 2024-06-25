@@ -50,11 +50,10 @@ def cld_loss(sde : SDEs.CLD,data, model):
     shaped_t = times.reshape(-1,1,1,1) if len(data.shape) > 2 else times.reshape(-1,1)
     ext_data = torch.cat((data,torch.randn_like(data)),dim=1) # Add velocity
     mean = sde.marginal_prob_mean(ext_data,shaped_t)
+    lxx, lxv, lvv = sde.marginal_prob_std(shaped_t)
     noise = torch.randn_like(mean,device=data.device)
     perturbed_data = mean + sde.multiply_std(noise,shaped_t)
-    # flatten_error = ((sde.multiply_inv_std(model(perturbed_data,times) + noise, times_shape))**2).view(data.shape[0],-1)
-    flatten_error = ((model(perturbed_data,times) + sde.multiply_inv_std(noise, shaped_t))**2).view(data.shape[0],-1)
-    # flatten_error = ((model(perturbed_data,times).chunk(2,dim=1)[1] + sde.multiply_inv_std(noise, times_shape).chunk(2,dim=1)[1])**2).view(data.shape[0],-1)
+    flatten_error = ((model(perturbed_data,times) * lvv + noise.chunk(2,dim=1)[1])**2).view(data.shape[0],-1)
     
     return torch.mean(torch.sum(flatten_error,dim=1))
     

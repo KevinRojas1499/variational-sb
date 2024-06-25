@@ -20,7 +20,7 @@ class MLP(nn.Module):
             nn.SiLU(),
             nn.Linear(256,128),
             nn.SiLU(),
-            nn.Linear(128,self.true_dim - 1)
+            nn.Linear(128,self.dim)
         )
         
     def forward(self,x,t):
