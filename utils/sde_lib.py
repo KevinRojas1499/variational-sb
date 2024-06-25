@@ -526,7 +526,7 @@ class CLD(SDE):
     if forward:
       return torch.cat((d_x,d_v),dim=-1)
     else:
-      return torch.cat((d_x, d_v - self.diffusion(z,t)**2 * self.backward_score(z,t)),dim=-1)
+      return torch.cat((d_x, d_v - (2 * self.beta(t) * self.gamma) * self.backward_score(z,t)),dim=-1)
 
   def probability_flow_drift(self, z,t):
     x,v = torch.chunk(z,2,dim=-1)
@@ -536,41 +536,15 @@ class CLD(SDE):
     return torch.cat((d_x, d_v - self.gamma * beta * self.backward_score(z,t)),dim=-1)
   
   def diffusion(self, z,t):
-    return (2 * self.beta(t) * self.gamma)**.5
+    # This was done in an effort to unify the sampling for all the methods
+    x,v = torch.chunk(z,2,dim=-1)
+    zeros = torch.zeros_like(x)
+    ones = torch.ones_like(v)
+    return (2 * self.beta(t) * self.gamma)**.5 * torch.cat((zeros,ones),dim=-1)
   
   def prior_sampling(self, shape, device):
     return torch.randn(*shape, dtype=torch.float, device=device)
   
-  def sample(self, shape, device, backward=True, in_cond=None, prob_flow=False):
-    
-    with torch.no_grad():
-      zt = self.prior_sampling(shape,device) if backward else in_cond
-      
-      assert zt is not None
-      n_time_pts = 100      
-      time_pts = torch.linspace(0., self.T, n_time_pts, device=device)
-      trajectories = torch.empty((zt.shape[0], n_time_pts-1, *zt.shape[1:]),device=zt.device) 
-
-      for i, t in enumerate(time_pts):
-        if i == n_time_pts - 1:
-          break
-        dt = time_pts[i+1] - t 
-        dt = -dt if backward else dt 
-        t_shape = self.T - t if backward else t
-        t_shape = t_shape.unsqueeze(-1).expand(zt.shape[0],1)
-        if prob_flow:
-          drift = self.probability_flow_drift(zt,t_shape)
-          zt = zt + drift * dt
-        else:
-          drift = self.drift(zt,t_shape, forward=(not backward))
-          zt = zt + drift * dt 
-          xt,vt = torch.chunk(zt,2,dim=-1)
-          vt = vt + torch.randn_like(vt) * self.diffusion(zt,t) * dt.abs().sqrt()
-          zt = torch.cat((xt,vt),dim=-1)
-        trajectories[:,i] = zt
-      return zt, trajectories
-  
-
 def get_sde(sde_name):
   if sde_name == 'vp':
     return VP()
