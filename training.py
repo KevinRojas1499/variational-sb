@@ -23,6 +23,9 @@ def init_wandb(opts):
         # # track hyperparameters and run metadata
         # config=config
     )
+
+def is_sb_sde(name):
+    return (name in ['sb','linear-sb','momentum-sb'])
     
 def update_ema(model, model_ema, beta):
     for p_ema, p_net in zip(model_ema.parameters(), model.parameters()):
@@ -32,19 +35,19 @@ def default_num_iters(ctx, param, value):
     sde = ctx.params.get('sde')
     if value is not None: 
         return value
-    return 2000 if sde == 'sb' else 10000
+    return 2000 if is_sb_sde(sde) else 10000
 def default_log_rate(ctx, param, value):
     sde = ctx.params.get('sde')
     if value is not None: 
         return value
-    return 500 if sde == 'sb' else 2000
+    return 500 if is_sb_sde(sde) else 2000
 
 @click.command()
 @click.option('--dataset',type=click.Choice(['gmm','spiral','checkerboard']))
 @click.option('--model_forward',type=click.Choice(['mlp','toy','linear']), default='mlp')
 @click.option('--model_backward',type=click.Choice(['mlp','toy','linear']), default='mlp')
 @click.option('--precondition', is_flag=True, default=False)
-@click.option('--sde',type=click.Choice(['vp','cld','sb','edm', 'linear-sb']), default='vp')
+@click.option('--sde',type=click.Choice(['vp','cld','sb','edm', 'linear-sb','momentum-sb']), default='vp')
 @click.option('--optimizer',type=click.Choice(['adam','adamw']), default='adam')
 @click.option('--lr', type=float, default=3e-3)
 @click.option('--ema_beta', type=float, default=.99)
@@ -58,7 +61,7 @@ def training(**opts):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     dataset = get_dataset(opts)
     dim = dataset.dim
-    is_sb = (opts.sde in ['sb','linear-sb'])
+    is_sb = is_sb_sde(opts.sde)
     sde = get_sde(opts.sde)
     sampling_sde = get_sde(opts.sde)
     # Set up backwards model
@@ -105,7 +108,7 @@ def training(**opts):
         })
         # Evaluate sample accuracy
         if (i+1)%log_sample_quality == 0 or i+1 == num_iters:
-            sampling_shape = (1000,4) if opts.sde == 'cld' else (1000,2) 
+            sampling_shape = (1000,4) if sde.is_augmented else (1000,2) 
             new_data, _ = sde.sample(sampling_shape, device)
             new_data_ema, _  = sampling_sde.sample(sampling_shape, device)
             fig = create_figs(dim, [data, new_data, new_data_ema], ['true','normal', 'ema'])
