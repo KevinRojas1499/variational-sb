@@ -19,15 +19,25 @@ def dsm_loss(sde : SDEs.SDE,data, model):
     
     return torch.mean(torch.sum(flatten_error,dim=1))
 
-def linear_sb_loss(sde : SDEs.LinearSchrodingerBridge,data, model):
+def linear_sb_loss(sde : SDEs.GeneralLinearizedSB,data, model):
     eps = sde.delta
     times = (torch.rand((data.shape[0]),device=data.device) * (1-eps) + eps) * sde.T
     shaped_t = times.reshape(-1,1,1,1) if len(data.shape) > 2 else times.reshape(-1,1)
+    if sde.is_augmented:
+        v_noise = torch.randn_like(data)
+        data = torch.cat((data,v_noise),dim=-1)
+
     mean, L, invL, max_eig = sde.marginal_prob(data,shaped_t)
     noise = torch.randn_like(mean,device=data.device)
-    perturbed_data = mean + batch_matrix_product(L, noise) 
-    flatten_error = ((batch_matrix_product(invL.mT, noise) + model(perturbed_data,times))**2).view(data.shape[0],-1)
-    
+    perturbed_data = mean + batch_matrix_product(L, noise)
+    score = model(perturbed_data,times)
+    if sde.is_augmented:
+        big_model = torch.cat((torch.zeros_like(score),score),dim=1)
+        pert_model = batch_matrix_product(L.mT, big_model).chunk(2,dim=1)[1]
+        flatten_error = ((noise.chunk(2,dim=1)[1] + pert_model)**2).view(data.shape[0],-1)
+    else:
+        # flatten_error = ((batch_matrix_product(invL.mT, noise) + score)**2).view(data.shape[0],-1)
+        flatten_error = ((noise + batch_matrix_product(L.mT, score))**2).view(data.shape[0],-1)
     return torch.mean(torch.sum(flatten_error,dim=1))
 
 def cld_loss(sde : SDEs.CLD,data, model):
@@ -93,9 +103,9 @@ def standard_sb_loss(sde : SDEs.SchrodingerBridge, data, model=None):
 def get_loss(sde_name):
     if sde_name == 'vp':
         return dsm_loss
-    if sde_name == 'sb':
+    elif sde_name == 'sb':
         return standard_sb_loss
-    elif sde_name == 'linear-sb':
+    elif sde_name in ('linear-sb','linear-momentum-sb'):
         return linear_sb_loss
     elif sde_name == 'cld':
         return cld_loss

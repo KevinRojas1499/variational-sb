@@ -84,9 +84,7 @@ def training(**opts):
     batch_size = opts.batch_size
     log_sample_quality=opts.log_rate
 
-    loss_fn = losses.standard_sb_loss if is_sb else losses.dsm_loss 
-    loss_fn = losses.cld_loss if opts.sde == 'cld' else loss_fn
-    
+    loss_fn = losses.get_loss(opts.sde) 
     init_wandb(opts)
     for i in tqdm(range(num_iters)):
         data = dataset.sample(batch_size).to(device=device)
