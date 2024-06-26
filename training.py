@@ -25,7 +25,7 @@ def init_wandb(opts):
     )
 
 def is_sb_sde(name):
-    return (name in ['sb','linear-sb','momentum-sb'])
+    return (name in ['sb','linear-sb','momentum-sb','linear-momentum-sb'])
     
 def update_ema(model, model_ema, beta):
     for p_ema, p_net in zip(model_ema.parameters(), model.parameters()):
@@ -47,7 +47,7 @@ def default_log_rate(ctx, param, value):
 @click.option('--model_forward',type=click.Choice(['mlp','toy','linear']), default='mlp')
 @click.option('--model_backward',type=click.Choice(['mlp','toy','linear']), default='mlp')
 @click.option('--precondition', is_flag=True, default=False)
-@click.option('--sde',type=click.Choice(['vp','cld','sb','edm', 'linear-sb','momentum-sb']), default='vp')
+@click.option('--sde',type=click.Choice(['vp','cld','sb','edm', 'linear-sb','momentum-sb','linear-momentum-sb']), default='vp')
 @click.option('--optimizer',type=click.Choice(['adam','adamw']), default='adam')
 @click.option('--lr', type=float, default=3e-3)
 @click.option('--ema_beta', type=float, default=.99)

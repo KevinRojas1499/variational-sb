@@ -50,7 +50,7 @@ class MatrixTimeEmbedding(nn.Module):
         At[:,:, :self.out_dim] *= self.id
         At[:,:, -self.out_dim:] *= self.id
         
-        return At
+        return torch.zeros_like(At)
 
 class LinearMLP(nn.Module):
     def __init__(self, dim, augmented_sde) -> None:
