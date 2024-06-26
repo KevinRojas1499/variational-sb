@@ -42,10 +42,15 @@ class MatrixTimeEmbedding(nn.Module):
             nn.SiLU(),
             nn.Linear(128,self.in_dim * out_dim)
         )
+        self.register_buffer('id',torch.eye(out_dim).unsqueeze(0))
         
     def forward(self,t):
         t = t.flatten().unsqueeze(-1)
-        return self.sequential(t).view(-1,self.out_dim,self.in_dim)
+        At = self.sequential(t).view(-1,self.out_dim,self.in_dim)
+        At[:,:, :self.out_dim] *= self.id
+        At[:,:, -self.out_dim:] *= self.id
+        
+        return At
 
 class LinearMLP(nn.Module):
     def __init__(self, dim, augmented_sde) -> None:

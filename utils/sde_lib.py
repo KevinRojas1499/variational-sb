@@ -156,10 +156,10 @@ class EDM(LinearSDE):
 class SchrodingerBridge(SDE):
   """ 
     Note that this is not a general SB, it is implemented so that after optimized
-    the linear drift transports to a standard normal
+    the linear drift transports to a standard normal, it also only works for f(Xt,t) = -.5 bt Xt
   """
-  def __init__(self, T=1.,delta=1e-3, beta_max=5, forward_score=None, backward_score=None):
-    super().__init__(is_augmented=False)
+  def __init__(self, T=1.,delta=1e-3, beta_max=5, forward_score=None, backward_score=None, is_augmented=False):
+    super().__init__(is_augmented=is_augmented)
     self._T = T
     self.delta = delta
     self.beta_max = beta_max
@@ -194,7 +194,30 @@ class SchrodingerBridge(SDE):
     return -.5 * beta * (xt - self.forward_score(xt,t) \
       + self.backward_score(xt, t))
 
-class GeneralLinearizedSB(LinearSDE, SchrodingerBridge):
+  def get_trajectories_for_loss(self, in_cond, time_pts):
+      n_time_pts = time_pts.shape[0]
+      
+      xt = in_cond.detach().clone().requires_grad_(True)
+      batch_size = xt.shape[0]
+      trajectories = torch.empty((in_cond.shape[0], n_time_pts-1, *in_cond.shape[1:]),device=in_cond.device) 
+      forward_scores = torch.empty_like(trajectories)
+      for i, t in enumerate(time_pts):
+        if i == n_time_pts - 1:
+          break
+        t_shape = t.unsqueeze(-1).expand(batch_size,1)
+        
+        bt = self.beta(t)
+        forward_score = bt * self.forward_score(xt,t_shape) # beta * fw_score
+          
+        trajectories[:,i] = xt
+        forward_scores[:,i] = forward_score
+        
+        # First we compute everything, we then take an euler step
+        dt = time_pts[i+1] - t
+        xt = xt + (-.5 * bt * xt + forward_score) * dt + torch.randn_like(xt) * self.diffusion(xt,t) * dt.abs().sqrt()
+      return xt,trajectories,forward_scores
+    
+class GeneralLinearizedSB(SchrodingerBridge, LinearSDE):
   """ 
     Note that this is not a general SB, it is implemented so that after optimized
     the linear drift transports to a standard normal
@@ -206,8 +229,9 @@ class GeneralLinearizedSB(LinearSDE, SchrodingerBridge):
         The dimension is infered from the forward model, so if it doesn't behave in this way it won't work
         We internally assign the forward model to be the multiplication against this matrix
     """
+    SchrodingerBridge.__init__(self,T,delta,beta_max,is_augmented=is_augmented)
     LinearSDE.__init__(self,is_augmented=is_augmented)
-    SchrodingerBridge.__init__(self,T,delta,beta_max)
+
     self.At = forward_model
     self.backward_score = backward_model
 
@@ -281,7 +305,7 @@ class GeneralLinearizedSB(LinearSDE, SchrodingerBridge):
     return mat @ L
    
   def prior_sampling(self, shape, device):
-    # return torch.randn(*shape, dtype=torch.float, device=device)
+    return torch.randn(*shape, dtype=torch.float, device=device)
     L = self.compute_variance(torch.tensor([[self.T]],device=device))[1][0]
     return (L @ torch.randn(*shape, dtype=torch.float, device=device).T).T
 
@@ -324,6 +348,7 @@ class LinearMomentumSchrodingerBridge(GeneralLinearizedSB):
         We internally assign the forward model to be the multiplication against this matrix
     """
     super().__init__(T, delta, beta_max, forward_model, backward_model, is_augmented=True)
+    self.gamma = 2
 
   @property
   def forward_score(self):
@@ -346,6 +371,50 @@ class LinearMomentumSchrodingerBridge(GeneralLinearizedSB):
   @property
   def T(self):
     return self._T
+  
+  def drift(self,z,t, forward=True):
+    beta = self.beta(t)
+    if forward:
+      return -.5 * beta * batch_matrix_product(self.D(t) , z)
+    else:
+      zt = -.5 * beta * batch_matrix_product(self.D(t) , z)
+      xt, vt = zt.chunk(2,dim=-1)
+      return  torch.cat((xt,vt - (self.gamma * beta) * self.backward_score(z,t)),dim=1)
+    
+  def diffusion(self, z,t):
+    # This was done in an effort to unify the sampling for all the methods
+    x,v = torch.chunk(z,2,dim=1)
+    zeros = torch.zeros_like(x)
+    ones = torch.ones_like(v)
+    return (self.beta(t) * self.gamma)**.5 * torch.cat((zeros,ones),dim=1)
+  
+  
+  def get_trajectories_for_loss(self, in_cond, time_pts):
+    n_time_pts = time_pts.shape[0]
+    
+    zt = in_cond.detach().clone().requires_grad_(True)
+    batch_size = zt.shape[0]
+    trajectories = torch.empty((in_cond.shape[0], n_time_pts-1, *in_cond.shape[1:]),device=in_cond.device) 
+    forward_scores = torch.empty((in_cond.shape[0], n_time_pts-1, in_cond.shape[1]//2, *in_cond.shape[2:]),device=in_cond.device) 
+
+    for i, t in enumerate(time_pts):
+      if i == n_time_pts - 1:
+        break
+      t_shape = t.unsqueeze(-1).expand(batch_size,1)
+      
+      bt = self.beta(t)
+      forward_score = bt * self.forward_score(zt,t_shape) # beta * fw_score
+      trajectories[:,i] = zt
+      forward_scores[:,i] = forward_score
+      
+      # First we compute everything, we then take an euler step
+      dt = time_pts[i+1] - t
+      xt,vt = zt.chunk(2,dim=1)
+      xt = .5 * bt * vt * dt
+      vt = (-.5 * bt * (xt + self.gamma * vt) + self.gamma * forward_score) * dt \
+          + torch.randn_like(vt) * (self.gamma * bt * dt).abs().sqrt()
+      zt = torch.cat((xt,vt),dim=1)
+    return zt,trajectories,forward_scores
 
 class CLD(SDE):
   # We assume that images have shape [B, C, H, W] 
