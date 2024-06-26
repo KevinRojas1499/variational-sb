@@ -224,7 +224,7 @@ class MomentumSchrodingerBridge(SchrodingerBridge):
     Note that this is not a general SB, it is implemented so that after optimized
     the linear drift transports to a standard normal
   """
-  def __init__(self,T=1.,delta=1e-3, gamma=2., beta_max=5, forward_model=None, backward_model=None):
+  def __init__(self,T=1.,delta=1e-3, gamma=2., beta_max=10, forward_model=None, backward_model=None):
     """ Here the backward model is a standard backwards score
         The forward model is such that it receives t of shape [bs,1] and outputs a matrix [bs, d,2d]
         The dimension is infered from the forward model, so if it doesn't behave in this way it won't work
@@ -241,11 +241,11 @@ class MomentumSchrodingerBridge(SchrodingerBridge):
     beta = self.beta(t)
     xt,vt = z.chunk(2,dim=1)
     if forward:
-      v_drift = xt + self.gamma * vt - 2 * self.gamma * self.forward_score(z,t)
-      return -.5 * beta * torch.cat((-vt, v_drift),dim=1)
+      v_drift = -xt - self.gamma * vt + 2 * self.gamma * self.forward_score(z,t)
+      return .5 * beta * torch.cat((vt, v_drift),dim=1)
     else:
-      v_drift = xt + self.gamma * vt + 2 * self.gamma * self.backward_score(z,t)
-      return -.5 * beta * torch.cat((vt,v_drift),dim=1)
+      v_drift = -xt - self.gamma * vt - 2 * self.gamma * self.backward_score(z,t)
+      return .5 * beta * torch.cat((vt,v_drift),dim=1)
     
   def diffusion(self, z,t):
     # This was done in an effort to unify the sampling for all the methods
@@ -277,7 +277,7 @@ class MomentumSchrodingerBridge(SchrodingerBridge):
       dt = time_pts[i+1] - t
       xt,vt = zt.chunk(2,dim=1)
       xt = .5 * bt * vt * dt
-      vt = (-.5 * bt * (xt + self.gamma * vt) + bt**.5 * forward_score) * dt \
+      vt = (-.5 * bt * (xt + self.gamma * vt) + (self.gamma * bt)**.5 * forward_score) * dt \
           + torch.randn_like(vt) * (self.gamma * bt * dt).abs().sqrt()
       zt = torch.cat((xt,vt),dim=1)
     # Forward scores really are the forward policy as described in the FBSDE paper

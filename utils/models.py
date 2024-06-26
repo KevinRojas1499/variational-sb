@@ -46,6 +46,8 @@ class MatrixTimeEmbedding(nn.Module):
         
     def forward(self,t):
         t = t.flatten().unsqueeze(-1)
+        return torch.zeros(t.shape[0],self.out_dim, self.in_dim, device=t.device)
+        
         At = self.sequential(t).view(-1,self.out_dim,self.in_dim)
         At[:,:, :self.out_dim] *= self.id
         At[:,:, -self.out_dim:] *= self.id
