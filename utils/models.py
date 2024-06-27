@@ -46,13 +46,13 @@ class MatrixTimeEmbedding(nn.Module):
         
     def forward(self,t):
         t = t.flatten().unsqueeze(-1)
-        return torch.zeros(t.shape[0],self.out_dim, self.in_dim, device=t.device)
+        # return torch.zeros(t.shape[0],self.out_dim, self.in_dim, device=t.device)
         
         At = self.sequential(t).view(-1,self.out_dim,self.in_dim)
-        At[:,:, :self.out_dim] *= self.id
-        At[:,:, -self.out_dim:] *= self.id
+        # At[:,:, :self.out_dim] *= self.id
+        # At[:,:, -self.out_dim:] *= self.id
         
-        return torch.zeros_like(At)
+        return At
 
 class LinearMLP(nn.Module):
     def __init__(self, dim, augmented_sde) -> None:

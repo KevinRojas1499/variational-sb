@@ -476,17 +476,18 @@ class LinearMomentumSchrodingerBridge(GeneralLinearizedSB):
       t_shape = t.unsqueeze(-1).expand(batch_size,1)
       
       bt = self.beta(t)
-      forward_score = bt * self.forward_score(zt,t_shape) # beta * fw_score
+      forward_score = (self.gamma * bt)**.5 * self.forward_score(zt,t_shape) # g * fw_score
       trajectories[:,i] = zt
       forward_scores[:,i] = forward_score
       
       # First we compute everything, we then take an euler step
       dt = time_pts[i+1] - t
       xt,vt = zt.chunk(2,dim=1)
-      drift_x = .5 * bt * vt * dt
-      drift_v = (-.5 * bt * (xt + self.gamma * vt) + self.gamma * forward_score) * dt \
+      x_drift = .5 * bt * vt * dt
+      v_drift = (-.5 * bt * (xt + self.gamma * vt) + (self.gamma * bt)**.5 * forward_score) * dt \
           + torch.randn_like(vt) * (self.gamma * bt * dt).abs().sqrt()
-      zt = torch.cat((xt + drift_x ,vt + drift_v),dim=1)
+      zt = torch.cat((xt + x_drift,vt + v_drift),dim=1)
+    # Forward scores really are the forward policy as described in the FBSDE paper
     return zt,trajectories,forward_scores
 
 class CLD(SDE):

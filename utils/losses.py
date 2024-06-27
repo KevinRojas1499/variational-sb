@@ -106,6 +106,6 @@ def get_loss(sde_name):
     elif sde_name == 'sb':
         return standard_sb_loss
     elif sde_name in ('linear-sb','linear-momentum-sb'):
-        return linear_sb_loss
+        return standard_sb_loss
     elif sde_name == 'cld':
         return cld_loss
