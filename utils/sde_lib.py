@@ -408,7 +408,7 @@ class LinearSchrodingerBridge(GeneralLinearizedSB):
     id = torch.eye(mat.shape[-1], device=mat.device).unsqueeze(0)
     return id - 2 * (mat + mat.mT)
 
-class LinearMomentumSchrodingerBridge(GeneralLinearizedSB):
+class LinearMomentumSchrodingerBridge(MomentumSchrodingerBridge, GeneralLinearizedSB):
   """ 
     Note that this is not a general SB, it is implemented so that after optimized
     the linear drift transports to a standard normal
@@ -419,8 +419,8 @@ class LinearMomentumSchrodingerBridge(GeneralLinearizedSB):
         The dimension is infered from the forward model, so if it doesn't behave in this way it won't work
         We internally assign the forward model to be the multiplication against this matrix
     """
-    super().__init__(T, delta, beta_max, forward_model, backward_model, is_augmented=True)
-    self.gamma = gamma
+    MomentumSchrodingerBridge.__init__(self,T,delta,gamma,beta_max,forward_model,backward_model)
+    GeneralLinearizedSB.__init__(self,T,delta,beta_max,forward_model,backward_model,is_augmented=True)
 
   @property
   def forward_score(self):
@@ -462,33 +462,6 @@ class LinearMomentumSchrodingerBridge(GeneralLinearizedSB):
     return (self.beta(t) * self.gamma)**.5 * torch.cat((zeros,ones),dim=1)
   
   
-  def get_trajectories_for_loss(self, in_cond, time_pts):
-    n_time_pts = time_pts.shape[0]
-    
-    zt = in_cond.detach().clone().requires_grad_(True)
-    batch_size = zt.shape[0]
-    trajectories = torch.empty((in_cond.shape[0], n_time_pts-1, *in_cond.shape[1:]),device=in_cond.device) 
-    forward_scores = torch.empty((in_cond.shape[0], n_time_pts-1, in_cond.shape[1]//2, *in_cond.shape[2:]),device=in_cond.device) 
-
-    for i, t in enumerate(time_pts):
-      if i == n_time_pts - 1:
-        break
-      t_shape = t.unsqueeze(-1).expand(batch_size,1)
-      
-      bt = self.beta(t)
-      forward_score = (self.gamma * bt)**.5 * self.forward_score(zt,t_shape) # g * fw_score
-      trajectories[:,i] = zt
-      forward_scores[:,i] = forward_score
-      
-      # First we compute everything, we then take an euler step
-      dt = time_pts[i+1] - t
-      xt,vt = zt.chunk(2,dim=1)
-      x_drift = .5 * bt * vt * dt
-      v_drift = (-.5 * bt * (xt + self.gamma * vt) + (self.gamma * bt)**.5 * forward_score) * dt \
-          + torch.randn_like(vt) * (self.gamma * bt * dt).abs().sqrt()
-      zt = torch.cat((xt + x_drift,vt + v_drift),dim=1)
-    # Forward scores really are the forward policy as described in the FBSDE paper
-    return zt,trajectories,forward_scores
 
 class CLD(SDE):
   # We assume that images have shape [B, C, H, W] 
