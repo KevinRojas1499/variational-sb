@@ -48,8 +48,9 @@ def default_log_rate(ctx, param, value):
 @click.option('--model_backward',type=click.Choice(['mlp','toy','linear']), default='mlp')
 @click.option('--precondition', is_flag=True, default=False)
 @click.option('--sde',type=click.Choice(['vp','cld','sb','edm', 'linear-sb','momentum-sb','linear-momentum-sb']), default='vp')
+@click.option('--sb_loss_type', type=click.Choice(['joint','alternate']),default='alternate')
 @click.option('--optimizer',type=click.Choice(['adam','adamw']), default='adam')
-@click.option('--lr', type=float, default=3e-3)
+@click.option('--lr', type=float, default=3e-4)
 @click.option('--ema_beta', type=float, default=.99)
 @click.option('--batch_size', type=int, default=512)
 @click.option('--log_rate',type=int,callback=default_log_rate)
@@ -62,6 +63,7 @@ def training(**opts):
     dataset = get_dataset(opts)
     dim = dataset.dim
     is_sb = is_sb_sde(opts.sde)
+    is_alternate_training = (opts.sb_loss_type == 'alternate')
     sde = get_sde(opts.sde)
     sampling_sde = get_sde(opts.sde)
     # Set up backwards model
@@ -73,7 +75,13 @@ def training(**opts):
         model_forward , ema_forward  = get_model(opts.model_forward,sde,device)
         sde.forward_score = model_forward
         sampling_sde.forward_score = model_forward
-        
+    def init_weights(m):
+        if isinstance(m, torch.nn.Linear):
+            torch.nn.init.zeros_(m.bias)
+            torch.nn.init.zeros_(m.weight)
+
+    # model_forward.apply(init_weights)
+    # model_backward.apply(init_weights)  
     if opts.precondition:
         sde.backward_score = get_preconditioned_model(model_backward, sde)
         sampling_sde.backward_score = get_preconditioned_model(model_backward, sde)
@@ -84,14 +92,33 @@ def training(**opts):
     batch_size = opts.batch_size
     log_sample_quality=opts.log_rate
 
-    loss_fn = losses.get_loss(opts.sde) 
+    loss_fn = losses.get_loss(opts.sde, is_alternate_training) 
     init_wandb(opts)
     for i in tqdm(range(num_iters)):
         data = dataset.sample(batch_size).to(device=device)
         opt.zero_grad()
+        optimizing_forward = (i//250)%2 == 1
         
-        loss = loss_fn(sde,data,model_backward)
+        if optimizing_forward:
+            model_backward.requires_grad_(False)
+            model_forward.requires_grad_(True)
+        else:
+            model_forward.requires_grad_(False)
+            model_backward.requires_grad_(True)
+        if is_alternate_training:
+            loss = loss_fn(sde,data,optimize_forward=optimizing_forward)
+        else:
+            loss = loss_fn(sde,data)            
         loss.backward()
+        
+        # print('forward', torch.norm(torch.cat([p.grad.view(-1) for p in chain(model_forward.parameters())])))
+        # print('backward',torch.norm(torch.cat([p.grad.view(-1) for p in chain(model_backward.parameters())])))
+        
+        torch.nn.utils.clip_grad_norm_(model_forward.parameters(),1)
+        torch.nn.utils.clip_grad_norm_(model_backward.parameters(), 1)
+        
+        # print('forward', torch.norm(torch.cat([p.grad.view(-1) for p in chain(model_forward.parameters())])))
+        # print('backward',torch.norm(torch.cat([p.grad.view(-1) for p in chain(model_backward.parameters())])))
         
         opt.step()
         

@@ -58,8 +58,9 @@ class SDE(abc.ABC):
 
 class LinearSDE(SDE):
   
-  def __init__(self, is_augmented):
-    super().__init__(is_augmented)
+  def __init__(self, backward_score, is_augmented):
+    SDE.__init__(self, is_augmented)
+    self.backward_score = backward_score
     
   @abc.abstractmethod
   def marginal_prob(self, x, t):
@@ -68,11 +69,10 @@ class LinearSDE(SDE):
 class VP(LinearSDE):
 
   def __init__(self,T=1.,delta=1e-3, beta_max=5, model_backward=None):
-    super().__init__(is_augmented=False)
+    super().__init__(self,backward_score=model_backward,is_augmented=False)
     self._T = T
     self.delta = delta
     self.beta_max = beta_max
-    self.backward_score = model_backward
 
   @property
   def T(self):
@@ -114,10 +114,9 @@ class VP(LinearSDE):
 class EDM(LinearSDE):
 
   def __init__(self,T=80.,delta=1e-3, model_backward=None):
-    super().__init__(is_augmented=False)
+    super().__init__(backward_score=model_backward, is_augmented=False)
     self._T = T
     self.delta = delta
-    self.backward_score = model_backward
 
   @property
   def T(self):
@@ -159,7 +158,7 @@ class SchrodingerBridge(SDE):
     the linear drift transports to a standard normal, it also only works for f(Xt,t) = -.5 bt Xt
   """
   def __init__(self, T=1.,delta=1e-3, beta_max=5, forward_score=None, backward_score=None, is_augmented=False):
-    super().__init__(is_augmented=is_augmented)
+    SDE.__init__(self,is_augmented=is_augmented)
     self._T = T
     self.delta = delta
     self.beta_max = beta_max
@@ -194,30 +193,37 @@ class SchrodingerBridge(SDE):
     return -.5 * beta * (xt - self.forward_score(xt,t) \
       + self.backward_score(xt, t))
 
-  def get_trajectories_for_loss(self, in_cond, time_pts):
-      n_time_pts = time_pts.shape[0]
+  def get_trajectories_for_loss(self, in_cond, time_pts,forward=True):
+    n_time_pts = time_pts.shape[0]
+    
+    xt = in_cond.detach().clone().requires_grad_(True)
+    batch_size = xt.shape[0]
+    trajectories = torch.empty((in_cond.shape[0], n_time_pts, *in_cond.shape[1:]),device=in_cond.device) 
+    policies = torch.empty_like(trajectories)
+    cur_score = self.forward_score if forward else self.backward_score
+    for i, t in enumerate(time_pts):
+      if not forward:
+        t = self.T - t
+      t_shape = t.unsqueeze(-1).expand(batch_size,1)
       
-      xt = in_cond.detach().clone().requires_grad_(True)
-      batch_size = xt.shape[0]
-      trajectories = torch.empty((in_cond.shape[0], n_time_pts-1, *in_cond.shape[1:]),device=in_cond.device) 
-      forward_scores = torch.empty_like(trajectories)
-      for i, t in enumerate(time_pts):
-        if i == n_time_pts - 1:
-          break
-        t_shape = t.unsqueeze(-1).expand(batch_size,1)
-        
-        bt = self.beta(t)
-        forward_score = bt**.5 * self.forward_score(xt,t_shape) # g * fw_score
-          
-        trajectories[:,i] = xt
-        forward_scores[:,i] = forward_score
-        
-        # First we compute everything, we then take an euler step
-        dt = time_pts[i+1] - t
-        xt = xt + (-.5 * bt * xt + bt**.5 * forward_score) * dt + torch.randn_like(xt) * self.diffusion(xt,t) * dt.abs().sqrt()
+      bt = self.beta(t)
+      save_idx = i if forward else -(i+1)
+      policy = bt**.5 * cur_score(xt,t_shape) # g * fw_score
+      policies[:,save_idx] = policy
+      trajectories[:,save_idx] = xt
       
-      # Forward scores really are the forward policy as described in the FBSDE paper
-      return xt,trajectories,forward_scores
+      if i == n_time_pts - 1:
+        break
+      
+      # First we compute everything, we then take an euler step
+      dt = time_pts[i+1] - time_pts[i]
+      dt = dt if forward else -dt
+      if forward:
+        xt = xt + (-.5 * bt * xt + bt**.5 * policy) * dt + torch.randn_like(xt) * self.diffusion(xt,t) * dt.abs().sqrt()
+      else:
+        xt = xt + (-.5 * bt * xt - bt**.5 * policy) * dt #+ torch.randn_like(xt) * self.diffusion(xt,t) * dt.abs().sqrt()
+        
+    return xt,trajectories,policies
     
 class MomentumSchrodingerBridge(SchrodingerBridge):
   """ 
@@ -230,7 +236,7 @@ class MomentumSchrodingerBridge(SchrodingerBridge):
         The dimension is infered from the forward model, so if it doesn't behave in this way it won't work
         We internally assign the forward model to be the multiplication against this matrix
     """
-    super().__init__(T, delta, beta_max, forward_model, backward_model, is_augmented=True)
+    SchrodingerBridge.__init__(self, T, delta, beta_max, forward_model, backward_model, is_augmented=True)
     self.gamma = gamma
 
   @property
@@ -297,10 +303,9 @@ class GeneralLinearizedSB(SchrodingerBridge, LinearSDE):
         We internally assign the forward model to be the multiplication against this matrix
     """
     SchrodingerBridge.__init__(self,T,delta,beta_max,is_augmented=is_augmented)
-    LinearSDE.__init__(self,is_augmented=is_augmented)
+    LinearSDE.__init__(self,backward_score=backward_model, is_augmented=is_augmented)
 
     self.At = forward_model
-    self.backward_score = backward_model
 
   @property
   def forward_score(self):
@@ -393,7 +398,7 @@ class LinearSchrodingerBridge(GeneralLinearizedSB):
         The dimension is infered from the forward model, so if it doesn't behave in this way it won't work
         We internally assign the forward model to be the multiplication against this matrix
     """
-    super().__init__(T, delta, beta_max, forward_model, backward_model, is_augmented=False)
+    GeneralLinearizedSB.__init__(self, T, delta, beta_max, forward_model, backward_model, is_augmented=False)
 
   @property
   def forward_score(self):
