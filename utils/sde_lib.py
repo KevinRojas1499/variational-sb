@@ -69,7 +69,7 @@ class LinearSDE(SDE):
 class VP(LinearSDE):
 
   def __init__(self,T=1.,delta=1e-3, beta_max=5, model_backward=None):
-    super().__init__(self,backward_score=model_backward,is_augmented=False)
+    LinearSDE.__init__(self,backward_score=model_backward,is_augmented=False)
     self._T = T
     self.delta = delta
     self.beta_max = beta_max
@@ -198,7 +198,7 @@ class SchrodingerBridge(SDE):
     
     xt = in_cond.detach().clone().requires_grad_(True)
     batch_size = xt.shape[0]
-    trajectories = torch.empty((in_cond.shape[0], n_time_pts, *in_cond.shape[1:]),device=in_cond.device) 
+    trajectories = torch.empty((batch_size, n_time_pts, *in_cond.shape[1:]),device=in_cond.device) 
     policies = torch.empty_like(trajectories)
     cur_score = self.forward_score if forward else self.backward_score
     for i, t in enumerate(time_pts):
@@ -221,7 +221,7 @@ class SchrodingerBridge(SDE):
       if forward:
         xt = xt + (-.5 * bt * xt + bt**.5 * policy) * dt + torch.randn_like(xt) * self.diffusion(xt,t) * dt.abs().sqrt()
       else:
-        xt = xt + (-.5 * bt * xt - bt**.5 * policy) * dt #+ torch.randn_like(xt) * self.diffusion(xt,t) * dt.abs().sqrt()
+        xt = xt + (-.5 * bt * xt - bt**.5 * policy) * dt + torch.randn_like(xt) * self.diffusion(xt,t) * dt.abs().sqrt()
         
     return xt,trajectories,policies
     

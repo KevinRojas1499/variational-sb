@@ -7,6 +7,7 @@ from tqdm import tqdm
 from itertools import chain
 from torch.optim import Adam
 
+from utils.training_routines import AlternateTrainingLoop
 from utils.sde_lib import get_sde
 import utils.losses as losses
 from utils.model_utils import get_model, get_preconditioned_model
@@ -49,6 +50,7 @@ def default_log_rate(ctx, param, value):
 @click.option('--precondition', is_flag=True, default=False)
 @click.option('--sde',type=click.Choice(['vp','cld','sb','edm', 'linear-sb','momentum-sb','linear-momentum-sb']), default='vp')
 @click.option('--sb_loss_type', type=click.Choice(['joint','alternate']),default='alternate')
+@click.option('--refresh_rate', type=int, default=100, help='How often to resample trajectories for the alternate sampling scheme and switch from forward to backward')
 @click.option('--optimizer',type=click.Choice(['adam','adamw']), default='adam')
 @click.option('--lr', type=float, default=3e-4)
 @click.option('--ema_beta', type=float, default=.99)
@@ -63,7 +65,7 @@ def training(**opts):
     dataset = get_dataset(opts)
     dim = dataset.dim
     is_sb = is_sb_sde(opts.sde)
-    is_alternate_training = (opts.sb_loss_type == 'alternate')
+    is_alternate_training = (is_sb and opts.sb_loss_type == 'alternate')
     sde = get_sde(opts.sde)
     sampling_sde = get_sde(opts.sde)
     # Set up backwards model
@@ -91,22 +93,15 @@ def training(**opts):
     num_iters = opts.num_iters
     batch_size = opts.batch_size
     log_sample_quality=opts.log_rate
-
+    alternate_routine = AlternateTrainingLoop(sde,sampling_sde,model_forward,model_backward,opts.refresh_rate,100,device)
     loss_fn = losses.get_loss(opts.sde, is_alternate_training) 
     init_wandb(opts)
     for i in tqdm(range(num_iters)):
         data = dataset.sample(batch_size).to(device=device)
         opt.zero_grad()
-        optimizing_forward = (i//250)%2 == 1
-        
-        if optimizing_forward:
-            model_backward.requires_grad_(False)
-            model_forward.requires_grad_(True)
-        else:
-            model_forward.requires_grad_(False)
-            model_backward.requires_grad_(True)
+
         if is_alternate_training:
-            loss = loss_fn(sde,data,optimize_forward=optimizing_forward, sampling_sde=sampling_sde)
+            loss = alternate_routine.training_iteration(i,data)
         else:
             loss = loss_fn(sde,data)            
         loss.backward()
