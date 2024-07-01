@@ -68,7 +68,7 @@ class LinearSDE(SDE):
     pass  
 class VP(LinearSDE):
 
-  def __init__(self,T=1.,delta=1e-3, beta_max=5, model_backward=None):
+  def __init__(self,T=1.,delta=1e-3, beta_max=10, model_backward=None):
     LinearSDE.__init__(self,backward_score=model_backward,is_augmented=False)
     self._T = T
     self.delta = delta
@@ -157,7 +157,7 @@ class SchrodingerBridge(SDE):
     Note that this is not a general SB, it is implemented so that after optimized
     the linear drift transports to a standard normal, it also only works for f(Xt,t) = -.5 bt Xt
   """
-  def __init__(self, T=1.,delta=1e-3, beta_max=5, forward_score=None, backward_score=None, is_augmented=False):
+  def __init__(self, T=1.,delta=1e-3, beta_max=10, forward_score=None, backward_score=None, is_augmented=False):
     SDE.__init__(self,is_augmented=is_augmented)
     self._T = T
     self.delta = delta
@@ -296,7 +296,7 @@ class GeneralLinearizedSB(SchrodingerBridge, LinearSDE):
     the linear drift transports to a standard normal
     To instantiate a class you just have to implement how the D matrix works
   """
-  def __init__(self,T=1.,delta=1e-3, beta_max=5, forward_model=None, backward_model=None, is_augmented=False):
+  def __init__(self,T=1.,delta=1e-3, beta_max=10, forward_model=None, backward_model=None, is_augmented=False):
     """ Here the backward model is a standard backwards score
         The forward model is such that it receives t of shape [bs,1] and outputs a matrix [bs, d,d]
         The dimension is infered from the forward model, so if it doesn't behave in this way it won't work
@@ -359,8 +359,9 @@ class GeneralLinearizedSB(SchrodingerBridge, LinearSDE):
     C = ch_pair[:, :dim, dim:]
     H_inv = ch_pair[:, :dim, :dim].mH
     cov = C @ H_inv
+    L = torch.linalg.cholesky(cov)
     diag, Q = torch.linalg.eigh(cov)
-    L = Q @ torch.diag_embed(diag.sqrt()) @ Q.mH
+    # L = Q @ torch.diag_embed(diag.sqrt()) @ Q.mH
     invL = Q @ torch.diag_embed(1/(diag.sqrt())) @ Q.mH
     max_eig = diag[:,0].unsqueeze(-1)
     return cov, L, invL, max_eig
@@ -392,7 +393,7 @@ class LinearSchrodingerBridge(GeneralLinearizedSB):
     Note that this is not a general SB, it is implemented so that after optimized
     the linear drift transports to a standard normal
   """
-  def __init__(self,T=1.,delta=1e-3, beta_max=5, forward_model=None, backward_model=None):
+  def __init__(self,T=1.,delta=1e-3, beta_max=10, forward_model=None, backward_model=None):
     """ Here the backward model is a standard backwards score
         The forward model is such that it receives t of shape [bs,1] and outputs a matrix [bs, d,d]
         The dimension is infered from the forward model, so if it doesn't behave in this way it won't work
@@ -471,7 +472,7 @@ class LinearMomentumSchrodingerBridge(MomentumSchrodingerBridge, GeneralLineariz
 class CLD(SDE):
   # We assume that images have shape [B, C, H, W] 
   # Additionally there has been added channels as momentum
-  def __init__(self,T=1.,delta=1e-3, gamma=2,beta_max=5., model_backward=None):
+  def __init__(self,T=1.,delta=1e-3, gamma=2,beta_max=10., model_backward=None):
     super().__init__(is_augmented=True)
     self._T = T
     self.delta = delta

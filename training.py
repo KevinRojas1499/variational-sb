@@ -7,7 +7,7 @@ from tqdm import tqdm
 from itertools import chain
 from torch.optim import Adam
 
-from utils.training_routines import AlternateTrainingLoop
+from utils.training_routines import AlternateTrainingRoutine, VariationalDiffusionTrainingRoutine
 from utils.sde_lib import get_sde
 import utils.losses as losses
 from utils.model_utils import get_model, get_preconditioned_model
@@ -49,11 +49,13 @@ def default_log_rate(ctx, param, value):
 @click.option('--model_backward',type=click.Choice(['mlp','toy','linear']), default='mlp')
 @click.option('--precondition', is_flag=True, default=False)
 @click.option('--sde',type=click.Choice(['vp','cld','sb','edm', 'linear-sb','momentum-sb','linear-momentum-sb']), default='vp')
-@click.option('--sb_loss_type', type=click.Choice(['joint','alternate']),default='alternate')
+@click.option('--loss_routine', type=click.Choice(['joint','alternate','variational']),default='alternate')
 @click.option('--refresh_rate', type=int, default=100, help='How often to resample trajectories for the alternate sampling scheme and switch from forward to backward')
+# Training Options
 @click.option('--optimizer',type=click.Choice(['adam','adamw']), default='adam')
 @click.option('--lr', type=float, default=3e-4)
 @click.option('--ema_beta', type=float, default=.99)
+@click.option('--clip_grads', is_flag=True, default=False)
 @click.option('--batch_size', type=int, default=512)
 @click.option('--log_rate',type=int,callback=default_log_rate)
 @click.option('--num_iters',type=int,callback=default_num_iters)
@@ -65,7 +67,7 @@ def training(**opts):
     dataset = get_dataset(opts)
     dim = dataset.dim
     is_sb = is_sb_sde(opts.sde)
-    is_alternate_training = (is_sb and opts.sb_loss_type == 'alternate')
+    is_alternate_training = (is_sb and opts.loss_routine == 'alternate')
     sde = get_sde(opts.sde)
     sampling_sde = get_sde(opts.sde)
     # Set up backwards model
@@ -82,7 +84,7 @@ def training(**opts):
             torch.nn.init.zeros_(m.bias)
             torch.nn.init.zeros_(m.weight)
 
-    # model_forward.apply(init_weights)
+    model_forward.apply(init_weights)
     # model_backward.apply(init_weights)  
     if opts.precondition:
         sde.backward_score = get_preconditioned_model(model_backward, sde)
@@ -93,15 +95,24 @@ def training(**opts):
     num_iters = opts.num_iters
     batch_size = opts.batch_size
     log_sample_quality=opts.log_rate
-    alternate_routine = AlternateTrainingLoop(sde,sampling_sde,model_forward,model_backward,opts.refresh_rate,100,device)
+    if is_alternate_training:
+        routine = AlternateTrainingRoutine(sde,sampling_sde,model_forward,model_backward,opts.refresh_rate,100,device)
+    elif opts.loss_routine == 'variational':
+        print('variational routine')
+        routine = VariationalDiffusionTrainingRoutine(sde,sampling_sde,model_forward,model_backward,opts.refresh_rate,100,device)
     loss_fn = losses.get_loss(opts.sde, is_alternate_training) 
     init_wandb(opts)
+    
+    torch.autograd.set_detect_anomaly(True)
+    
     for i in tqdm(range(num_iters)):
         data = dataset.sample(batch_size).to(device=device)
         opt.zero_grad()
 
         if is_alternate_training:
-            loss = alternate_routine.training_iteration(i,data)
+            loss = routine.training_iteration(i,data)
+        elif opts.loss_routine == 'variational':
+            loss = routine.training_iteration(i,data)
         else:
             loss = loss_fn(sde,data)            
         loss.backward()
@@ -109,9 +120,10 @@ def training(**opts):
         # print('forward', torch.norm(torch.cat([p.grad.view(-1) for p in chain(model_forward.parameters())])))
         # print('backward',torch.norm(torch.cat([p.grad.view(-1) for p in chain(model_backward.parameters())])))
         
-        torch.nn.utils.clip_grad_norm_(model_forward.parameters(),1)
-        torch.nn.utils.clip_grad_norm_(model_backward.parameters(), 1)
-        
+        if opts.clip_grads:
+            torch.nn.utils.clip_grad_norm_(model_forward.parameters(),1)
+            torch.nn.utils.clip_grad_norm_(model_backward.parameters(), 1)
+            
         # print('forward', torch.norm(torch.cat([p.grad.view(-1) for p in chain(model_forward.parameters())])))
         # print('backward',torch.norm(torch.cat([p.grad.view(-1) for p in chain(model_backward.parameters())])))
         
