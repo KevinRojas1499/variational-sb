@@ -3,7 +3,6 @@ import torch.nn as nn
 import numpy as np
 import math 
 
-from utils.sde_lib import LinearSchrodingerBridge
 from utils.misc import batch_matrix_product
 
 class MLP(nn.Module):
@@ -76,30 +75,6 @@ class LinearMLP(nn.Module):
         A = self.sequential(t).view(-1,self.dim,self.dim)
         
         return batch_matrix_product(A,x)
-    
-class SB_Preconditioning(nn.Module):
-    def __init__(self, model, sde : LinearSchrodingerBridge) -> None:
-        super().__init__()
-        self.model = model
-        self.sde = sde
-    
-    def forward(self, x, t):
-        t_shape = t.reshape(-1,1)
-
-        invL = self.sde.compute_variance(t_shape)[2]
-        
-        denoiser = self.model(x,t_shape)
-        return -batch_matrix_product(invL.mT, denoiser)
-    
-        # t_shape = t.reshape(-1,1)
-        # matrix = -.5 * self.sde.int_beta_ds(t_shape)
-        # exp = matrix.matrix_exp()
-        # inv = (-matrix).matrix_exp()
-        
-        # invL = self.sde.compute_variance(t_shape)[2]
-        
-        # denoiser = self.model(batch_matrix_product(inv,x),t_shape)
-        # return batch_matrix_product(invL.mT, batch_matrix_product(exp, denoiser) - x)
 
 def timestep_embedding(timesteps, dim, max_period=10000):
     """

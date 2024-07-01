@@ -27,7 +27,7 @@ def linear_sb_loss(sde : SDEs.GeneralLinearizedSB,data):
         v_noise = torch.randn_like(data)
         data = torch.cat((data,v_noise),dim=-1)
 
-    mean, L, invL, max_eig = sde.marginal_prob(data,shaped_t)
+    mean, L = sde.marginal_prob(data,shaped_t)
     noise = torch.randn_like(mean,device=data.device)
     perturbed_data = mean + batch_matrix_product(L, noise)
     score = sde.backward_score(perturbed_data,times)

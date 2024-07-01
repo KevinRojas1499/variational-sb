@@ -55,12 +55,23 @@ class VariationalDiffusionTrainingRoutine():
         self.frozen_policy = None
         self.time_pts = torch.linspace(0., sb.T,n_time_pts,device=device)
     
+    def freeze_models(self, optimizing_forward):
+        if optimizing_forward:
+            self.model_backward.requires_grad_(False)
+            self.model_forward.requires_grad_(True)
+        else:
+            self.model_forward.requires_grad_(False)
+            self.model_backward.requires_grad_(True)
+
     def _optimizing_forward(self, itr):
         return (itr//self.refresh_rate)%2 == 1
     
+    def _needs_refresh(self, itr):
+        return (itr//self.refresh_rate)%2 != ((itr-1)//self.refresh_rate)%2
+    
     def refresh(self, itr, data):
         optimizing_forward = self._optimizing_forward(itr)
-        refresh = (itr//self.refresh_rate)%2 != ((itr-1)//self.refresh_rate)%2         
+        refresh = self._needs_refresh(itr)
         
         if refresh or itr == 0:
             if self.sb.is_augmented:
@@ -69,20 +80,17 @@ class VariationalDiffusionTrainingRoutine():
             xt, trajectories, frozen_policy = self.sampling_sb.get_trajectories_for_loss(in_cond, self.time_pts,forward=not optimizing_forward)
             self.trajectories = trajectories.detach_()
             self.frozen_policy = frozen_policy.detach_()      
-        
-            if optimizing_forward:
-                self.model_backward.requires_grad_(False)
-                self.model_forward.requires_grad_(True)
-            else:
-                self.model_forward.requires_grad_(False)
-                self.model_backward.requires_grad_(True)
+            
+            self.freeze_models(optimizing_forward)            
                 
     def training_iteration(self, itr, data):
-        if self._optimizing_forward(itr):
-            print('Optimizing forward')
+        optimizing_forward = self._optimizing_forward(itr)
+        if optimizing_forward:
             self.refresh(itr, data)
             return losses.alternate_sb_loss(self.sb,self.trajectories,self.frozen_policy,self.time_pts,True)
         else:
+            if self._needs_refresh(itr):
+                self.freeze_models(optimizing_forward)
             return losses.linear_sb_loss(self.sb, data)
 
 class EvalLossRoutine():

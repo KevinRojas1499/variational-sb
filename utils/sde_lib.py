@@ -360,27 +360,15 @@ class GeneralLinearizedSB(SchrodingerBridge, LinearSDE):
     H_inv = ch_pair[:, :dim, :dim].mH
     cov = C @ H_inv
     L = torch.linalg.cholesky(cov)
-    diag, Q = torch.linalg.eigh(cov)
-    # L = Q @ torch.diag_embed(diag.sqrt()) @ Q.mH
-    invL = Q @ torch.diag_embed(1/(diag.sqrt())) @ Q.mH
-    max_eig = diag[:,0].unsqueeze(-1)
-    return cov, L, invL, max_eig
-  
-  def marginal_prob_std(self, t):
-    return self.compute_variance(t)[1]
+    return cov, L, H_inv.mH # Cov, L, exp([-.5 bD]_t)
   
   def marginal_prob(self, x, t):
     # If    x is of shape [B, H, W, C]
     # then  t is of shape [B, 1, 1, 1] 
     # And similarly for other shapes
-    big_beta = (-.5 * self.int_beta_ds(t)).matrix_exp()
-    cov, L, invL, max_eig = self.compute_variance(t)
-    return batch_matrix_product(big_beta, x), L, invL, max_eig
+    cov, L, big_beta = self.compute_variance(t)
+    return batch_matrix_product(big_beta, x), L
   
-  def unscaled_marginal_prob_std(self, t):
-    mat = (.5 * self.int_beta_ds(t)).matrix_exp()
-    cov, L, invL, _ = self.compute_variance(t)
-    return mat @ L
    
   def prior_sampling(self, shape, device):
     return torch.randn(*shape, dtype=torch.float, device=device)
