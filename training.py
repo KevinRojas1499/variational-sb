@@ -69,12 +69,12 @@ def training(**opts):
     # Set up backwards model
     model_backward, ema_backward = get_model(opts.model_backward,sde, device)
     sde.backward_score = model_backward
-    sampling_sde.backward_score = model_backward
+    sampling_sde.backward_score = ema_backward
     if is_sb:
         # We need a forward model
         model_forward , ema_forward  = get_model(opts.model_forward,sde,device)
         sde.forward_score = model_forward
-        sampling_sde.forward_score = model_forward
+        sampling_sde.forward_score = ema_forward
     def init_weights(m):
         if isinstance(m, torch.nn.Linear):
             torch.nn.init.zeros_(m.bias)
@@ -106,7 +106,7 @@ def training(**opts):
             model_forward.requires_grad_(False)
             model_backward.requires_grad_(True)
         if is_alternate_training:
-            loss = loss_fn(sde,data,optimize_forward=optimizing_forward)
+            loss = loss_fn(sde,data,optimize_forward=optimizing_forward, sampling_sde=sampling_sde)
         else:
             loss = loss_fn(sde,data)            
         loss.backward()
