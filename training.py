@@ -60,6 +60,7 @@ def default_log_rate(ctx, param, value):
 @click.option('--log_rate',type=int,callback=default_log_rate)
 @click.option('--num_iters',type=int,callback=default_num_iters)
 @click.option('--dir',type=str)
+@click.option('--load_from_ckpt', type=str)
 def training(**opts):
     opts = dotdict(opts)
     print(opts)
@@ -79,6 +80,13 @@ def training(**opts):
         model_forward , ema_forward  = get_model(opts.model_forward,sde,device)
         sde.forward_score = model_forward
         sampling_sde.forward_score = ema_forward
+        
+    if opts.load_from_ckpt is not None:
+        model_backward = torch.load(os.path.join(opts.load_from_ckpt,'backward.pt'))
+        ema_backward = torch.load(os.path.join(opts.load_from_ckpt,'backward_ema.pt'))
+        if is_sb:
+            model_forward = torch.load(os.path.join(opts.load_from_ckpt,'forward.pt'))
+            ema_forward = torch.load(os.path.join(opts.load_from_ckpt,'forward_ema.pt'))
     def init_weights(m):
         if isinstance(m, torch.nn.Linear):
             torch.nn.init.zeros_(m.bias)
@@ -98,7 +106,6 @@ def training(**opts):
     if is_alternate_training:
         routine = AlternateTrainingRoutine(sde,sampling_sde,model_forward,model_backward,opts.refresh_rate,100,device)
     elif opts.loss_routine == 'variational':
-        print('variational routine')
         routine = VariationalDiffusionTrainingRoutine(sde,sampling_sde,model_forward,model_backward,opts.refresh_rate,100,device)
     loss_fn = losses.get_loss(opts.sde, is_alternate_training) 
     init_wandb(opts)
@@ -149,11 +156,11 @@ def training(**opts):
             path = os.path.join(opts.dir, f'itr_{i+1}/')
             os.makedirs(path,exist_ok=True) # Still wondering it this is the best idea
             
-            torch.save(model_backward,os.path.join(path, f'backward_{i+1}.pt'))
-            torch.save(ema_backward,os.path.join(path, f'backward_ema_{i+1}.pt'))
+            torch.save(model_backward,os.path.join(path, 'backward.pt'))
+            torch.save(ema_backward,os.path.join(path, 'backward_ema.pt'))
             if is_sb:
-                torch.save(model_forward,os.path.join(path, f'forward_{i+1}.pt'))
-                torch.save(ema_forward,os.path.join(path, f'forward_ema_{i+1}.pt'))
+                torch.save(model_forward,os.path.join(path, 'forward.pt'))
+                torch.save(ema_forward,os.path.join(path, 'forward_ema.pt'))
                 
 
 def create_figs(dim, data_array, names):

@@ -261,33 +261,40 @@ class MomentumSchrodingerBridge(SchrodingerBridge):
     return (self.beta(t) * self.gamma)**.5 * torch.cat((zeros,ones),dim=1)
   
   
-  def get_trajectories_for_loss(self, in_cond, time_pts):
+  def get_trajectories_for_loss(self, in_cond, time_pts,forward=True):
     n_time_pts = time_pts.shape[0]
     
     zt = in_cond.detach().clone().requires_grad_(True)
     batch_size = zt.shape[0]
-    trajectories = torch.empty((in_cond.shape[0], n_time_pts-1, *in_cond.shape[1:]),device=in_cond.device) 
-    forward_scores = torch.empty((in_cond.shape[0], n_time_pts-1, in_cond.shape[1]//2, *in_cond.shape[2:]),device=in_cond.device) 
-
+    trajectories = torch.empty((in_cond.shape[0], n_time_pts, *in_cond.shape[1:]),device=in_cond.device) 
+    policies = torch.empty((in_cond.shape[0], n_time_pts, in_cond.shape[1]//2, *in_cond.shape[2:]),device=in_cond.device) 
+    cur_score = self.forward_score if forward else self.backward_score
     for i, t in enumerate(time_pts):
-      if i == n_time_pts - 1:
-        break
+      if not forward:
+        t = self.T - t
       t_shape = t.unsqueeze(-1).expand(batch_size,1)
       
       bt = self.beta(t)
-      forward_score = (self.gamma * bt)**.5 * self.forward_score(zt,t_shape) # g * fw_score
-      trajectories[:,i] = zt
-      forward_scores[:,i] = forward_score
-      
+      policy = (self.gamma * bt)**.5 * cur_score(zt,t_shape) # g * fw_score
+      save_idx = i if forward else -(i+1)
+      trajectories[:,save_idx] = zt
+      policies[:,save_idx] = policy
+      if i == n_time_pts - 1:
+        break
       # First we compute everything, we then take an euler step
-      dt = time_pts[i+1] - t
+      dt = time_pts[i+1] - time_pts[i]
+      dt = dt if forward else -dt
       xt,vt = zt.chunk(2,dim=1)
       x_drift = .5 * bt * vt * dt
-      v_drift = (-.5 * bt * (xt + self.gamma * vt) + (self.gamma * bt)**.5 * forward_score) * dt \
+      if forward:
+        v_drift = (.5 * bt * (-xt - self.gamma * vt) + (self.gamma * bt)**.5 * policy) * dt \
+            + torch.randn_like(vt) * (self.gamma * bt * dt).abs().sqrt()
+      else:
+        v_drift = (.5 * bt * (-xt - self.gamma * vt) - (self.gamma * bt)**.5 * policy) * dt \
           + torch.randn_like(vt) * (self.gamma * bt * dt).abs().sqrt()
       zt = torch.cat((xt + x_drift,vt + v_drift),dim=1)
     # Forward scores really are the forward policy as described in the FBSDE paper
-    return zt,trajectories,forward_scores
+    return zt,trajectories,policies
 
 
 class GeneralLinearizedSB(SchrodingerBridge, LinearSDE):
