@@ -32,6 +32,11 @@ def update_ema(model, model_ema, beta):
     for p_ema, p_net in zip(model_ema.parameters(), model.parameters()):
         p_ema.copy_(p_net.detach().lerp(p_ema, beta))
 
+@torch.no_grad()
+def copy_ema_to_model(model, model_ema):
+    for p_ema, p_net in zip(model_ema.parameters(), model.parameters()):
+        p_net.copy_(p_ema.detach())
+
 def default_num_iters(ctx, param, value):
     sde = ctx.params.get('sde')
     if value is not None: 
@@ -50,7 +55,9 @@ def default_log_rate(ctx, param, value):
 @click.option('--precondition', is_flag=True, default=False)
 @click.option('--sde',type=click.Choice(['vp','cld','sb','edm', 'linear-sb','momentum-sb','linear-momentum-sb']), default='vp')
 @click.option('--loss_routine', type=click.Choice(['joint','alternate','variational']),default='alternate')
-@click.option('--refresh_rate', type=int, default=100, help='How often to resample trajectories for the alternate sampling scheme and switch from forward to backward')
+@click.option('--dsm_warm_up', type=int, default=2000, help='Perform first iterations using just DSM')
+@click.option('--forward_opt_steps', type=int, default=100, help='Number of forward opt steps in alternate training scheme')
+@click.option('--backward_opt_steps', type=int, default=100, help='Number of backward opt steps in alternate training scheme')
 # Training Options
 @click.option('--optimizer',type=click.Choice(['adam','adamw']), default='adam')
 @click.option('--lr', type=float, default=3e-4)
@@ -92,7 +99,9 @@ def training(**opts):
             torch.nn.init.zeros_(m.bias)
             torch.nn.init.zeros_(m.weight)
 
-    model_forward.apply(init_weights)
+            torch.nn.init.zeros_(model_forward.out.bias)
+            torch.nn.init.zeros_(model_forward.out.weight)
+    # model_forward.apply(init_weights)
     # model_backward.apply(init_weights)  
     if opts.precondition:
         sde.backward_score = get_preconditioned_model(model_backward, sde)
@@ -106,7 +115,7 @@ def training(**opts):
     if is_alternate_training:
         routine = AlternateTrainingRoutine(sde,sampling_sde,model_forward,model_backward,opts.refresh_rate,100,device)
     elif opts.loss_routine == 'variational':
-        routine = VariationalDiffusionTrainingRoutine(sde,sampling_sde,model_forward,model_backward,opts.refresh_rate,100,device)
+        routine = VariationalDiffusionTrainingRoutine(sde,sampling_sde,model_forward,model_backward,opts.dsm_warm_up,opts.forward_opt_steps, opts.backward_opt_steps,100,device)
     loss_fn = losses.get_loss(opts.sde, is_alternate_training) 
     init_wandb(opts)
     
@@ -140,7 +149,8 @@ def training(**opts):
         update_ema(model_backward, ema_backward, opts.ema_beta)
         if is_sb:
             update_ema(model_forward,  ema_forward, opts.ema_beta)
-        
+        if opts.loss_routine == 'variational':
+            copy_ema_to_model(model_forward, ema_forward)
         
         wandb.log({
             'loss': loss

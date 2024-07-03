@@ -38,16 +38,17 @@ class MatrixTimeEmbedding(nn.Module):
             nn.Linear(128,256),
             nn.SiLU(),
             nn.Linear(256,128),
-            nn.SiLU(),
-            nn.Linear(128,self.in_dim * out_dim)
+            nn.SiLU()
         )
+        self.out = nn.Linear(128, in_dim * out_dim)
         self.register_buffer('id',torch.eye(out_dim).unsqueeze(0))
         
     def forward(self,t):
         t = t.flatten().unsqueeze(-1)
         # return torch.zeros(t.shape[0],self.out_dim, self.in_dim, device=t.device)
         
-        At = self.sequential(t).view(-1,self.out_dim,self.in_dim)
+        At = self.sequential(t)
+        At = self.out(At).view(-1,self.out_dim,self.in_dim)
         # At[:,:, :self.out_dim] *= self.id
         # At[:,:, -self.out_dim:] *= self.id
         
