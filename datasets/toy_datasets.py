@@ -98,6 +98,7 @@ class Spiral(Dataset):
         samples[:, 0] = self.x_scalar * samples[:, 0]
         samples[:, 1] = self.y_scalar * samples[:, 1]
         return torch.Tensor(samples)       
+    
 
         
 def get_dataset(opts):

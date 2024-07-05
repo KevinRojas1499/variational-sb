@@ -9,7 +9,7 @@ import utils.models
 import utils.losses as losses
 import utils.samplers
 from utils.metrics import get_w2
-from utils.datasets import get_gmm
+from datasets.toy_datasets import get_gmm
 from utils.misc import dotdict
 
 

@@ -11,7 +11,7 @@ from utils.training_routines import AlternateTrainingRoutine, VariationalDiffusi
 from utils.sde_lib import get_sde
 import utils.losses as losses
 from utils.model_utils import get_model, get_preconditioned_model
-from utils.datasets import get_dataset
+from datasets.toy_datasets import get_dataset
 from utils.metrics import get_w2
 from utils.misc import dotdict
 
