@@ -8,14 +8,14 @@ from utils.misc import batch_matrix_product
 #          Diffusion Losses           #
 #######################################
 
-def dsm_loss(sde : SDEs.LinearSDE,data):
+def dsm_loss(sde : SDEs.LinearSDE,data, cond=None):
     eps = sde.delta
     times = (torch.rand((data.shape[0]),device=data.device) * (1-eps) + eps) * sde.T
     shaped_t = times.reshape(-1,1,1,1) if len(data.shape) > 2 else times.reshape(-1,1)
     mean, variance = sde.marginal_prob(data,shaped_t)
     noise = torch.randn_like(mean,device=data.device)
     perturbed_data = mean + variance**.5 * noise
-    flatten_error = ((variance**.5 * sde.backward_score(perturbed_data,times) + noise)**2).view(data.shape[0],-1)
+    flatten_error = ((variance**.5 * sde.backward_score(perturbed_data,times,cond) + noise)**2).view(data.shape[0],-1)
     
     return torch.mean(torch.sum(flatten_error,dim=1))
 
@@ -45,16 +45,16 @@ def linear_sb_loss(sde : SDEs.GeneralLinearizedSB,data):
     cov, L, big_beta = sde.compute_variance(shaped_t)
     return linear_sb_loss_given_params(sde,data,times,big_beta, L)
 
-def cld_loss(sde : SDEs.CLD,data):
+def cld_loss(sde : SDEs.CLD,data,cond=None):
     eps = sde.delta
     times = (torch.rand((data.shape[0]) ,device=data.device) * (1-eps) + eps) * sde.T
     shaped_t = times.reshape(-1,1,1,1) if len(data.shape) > 2 else times.reshape(-1,1)
-    ext_data = torch.cat((data,torch.randn_like(data)),dim=1) # Add velocity
+    ext_data = torch.cat((data,torch.zeros_like(data)),dim=1) # Add velocity
     mean = sde.marginal_prob_mean(ext_data,shaped_t)
     lxx, lxv, lvv = sde.marginal_prob_std(shaped_t)
     noise = torch.randn_like(mean,device=data.device)
     perturbed_data = mean + sde.multiply_std(noise,shaped_t)
-    flatten_error = ((sde.backward_score(perturbed_data,times) * lvv + noise.chunk(2,dim=1)[1])**2).view(data.shape[0],-1)
+    flatten_error = ((sde.backward_score(perturbed_data,times,cond) * lvv + noise.chunk(2,dim=1)[1])**2).view(data.shape[0],-1)
     
     return torch.mean(torch.sum(flatten_error,dim=1))
 

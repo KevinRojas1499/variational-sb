@@ -161,7 +161,8 @@ def training(**opts):
             new_data, _ = sde.sample(sampling_shape, device)
             new_data_ema, _  = sampling_sde.sample(sampling_shape, device)
             fig = create_figs(dim, [data, new_data, new_data_ema], ['true','normal', 'ema'])
-            wandb.log({'samples': fig })
+            wandb.log({'samples': fig , 'w2' : get_w2(data,new_data[:,:2]), 
+                       'w2-ema' : get_w2(data,new_data_ema[:,:2])})
             
             path = os.path.join(opts.dir, f'itr_{i+1}/')
             os.makedirs(path,exist_ok=True) # Still wondering it this is the best idea
