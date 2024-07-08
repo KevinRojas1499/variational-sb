@@ -45,7 +45,7 @@ class SDE(abc.ABC):
       # time_pts = torch.cat([time_pts, torch.zeros_like(time_pts[:1])]) # t_N = 0
       # time_pts = time_pts.flip(dims=(0,))
 
-      time_pts = torch.linspace(0., self.T, n_time_pts, device=device)
+      time_pts = torch.linspace(self.delta, self.T, n_time_pts, device=device)
       if return_traj:
         trajectories = torch.empty((xt.shape[0], n_time_pts, *xt.shape[1:]),device=xt.device) 
 
