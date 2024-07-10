@@ -1,7 +1,10 @@
 import torch.nn as nn
+import torch
 
-from utils.sde_lib import SDE, VP, CLD
+
+from utils.sde_lib import SDE, VP, CLD, GeneralLinearizedSB
 from utils.models import MLP, ToyPolicy, LinearMLP, MatrixTimeEmbedding
+from utils.misc import batch_matrix_product
 
 
 class PrecondVP(nn.Module):
@@ -26,6 +29,21 @@ class PrecondCLD(nn.Module):
         ones = [1] * (len(xt.shape)-1)
         
         return -vt/(lvv**2+lxv).view(-1,*ones) - self.net(zt,t,cond)/lvv.view(-1,*ones)
+
+class PrecondGeneral(nn.Module):
+    def __init__(self, net, sde : GeneralLinearizedSB) -> None:
+        super().__init__()
+        self.net = net
+        self.sde = sde
+        
+    def forward(self, zt,t,cond=None):
+        xt,vt = zt.chunk(2,dim=1)
+        cov, L, big_beta = self.sde.compute_variance(t)
+        Ltinv = torch.linalg.inv(L.mT)
+        score = self.net(zt,t,cond)
+        cur_shape = zt.shape
+        precond_score = batch_matrix_product(Ltinv,score.view(zt.shape[0],-1)).view(cur_shape)
+        return precond_score
 
 def get_model(name, sde : SDE, device):
     # Returns model, ema
