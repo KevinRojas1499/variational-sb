@@ -66,3 +66,5 @@ def get_preconditioned_model(model, sde):
         return PrecondVP(model,sde)
     elif isinstance(sde,CLD):
         return PrecondCLD(model, sde)
+    elif isinstance(sde,GeneralLinearizedSB):
+        return PrecondGeneral(model, sde)

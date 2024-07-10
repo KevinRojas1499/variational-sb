@@ -157,9 +157,7 @@ def standard_alternate_sb_loss(sde : SDEs.SchrodingerBridge, data,optimize_forwa
     
     return alternate_sb_loss(sde,trajectories,frozen_policy,time_pts,optimize_forward)
 
-def get_loss(sde_name, is_alternate_training, dsm_cool_down):
-    if dsm_cool_down:
-        return linear_sb_loss
+def get_loss(sde_name, is_alternate_training):
     if sde_name == 'vp':
         return dsm_loss
     elif sde_name in ('sb','momentum-sb'):

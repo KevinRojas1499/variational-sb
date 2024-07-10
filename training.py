@@ -56,7 +56,7 @@ def default_log_rate(ctx, param, value):
 @click.option('--sde',type=click.Choice(['vp','cld','sb','edm', 'linear-sb','momentum-sb','linear-momentum-sb']), default='vp')
 @click.option('--loss_routine', type=click.Choice(['joint','alternate','variational']),default='alternate')
 @click.option('--dsm_warm_up', type=int, default=2000, help='Perform first iterations using just DSM')
-@click.option('--dsm_cool_down', is_flag=True, default=False, help='Perform last iterations using just DSM for Variational Scores')
+@click.option('--dsm_cool_down', type=int, default=5000, help='Perform last iterations using just DSM')
 @click.option('--forward_opt_steps', type=int, default=100, help='Number of forward opt steps in alternate training scheme')
 @click.option('--backward_opt_steps', type=int, default=100, help='Number of backward opt steps in alternate training scheme')
 # Training Options
@@ -121,10 +121,11 @@ def training(**opts):
     if is_alternate_training:
         routine = AlternateTrainingRoutine(sde,sampling_sde,model_forward,model_backward,opts.refresh_rate,100,device)
     elif opts.loss_routine == 'variational':
-        routine = VariationalDiffusionTrainingRoutine(sde,sampling_sde,model_forward,model_backward,opts.dsm_warm_up,opts.forward_opt_steps, opts.backward_opt_steps,100,device)
-    loss_fn = losses.get_loss(opts.sde, is_alternate_training, opts.dsm_cool_down) 
-    if opts.dsm_cool_down:
-        model_forward.requires_grad_(False)
+        routine = VariationalDiffusionTrainingRoutine(sde,sampling_sde,model_forward,model_backward,
+                                                      opts.dsm_warm_up,opts.num_iters-opts.dsm_warm_up - opts.dsm_cool_down, opts.dsm_cool_down,
+                                                      opts.forward_opt_steps, opts.backward_opt_steps,100,device)
+    loss_fn = losses.get_loss(opts.sde, is_alternate_training) 
+
     init_wandb(opts)
     
     torch.autograd.set_detect_anomaly(True)

@@ -358,7 +358,7 @@ class GeneralLinearizedSB(SchrodingerBridge, LinearSDE):
   def int_beta_ds(self, t):
     # Curently using Simpsons Method
     num_pts = 1000
-    t_shape = t.unsqueeze(-1).expand(-1,num_pts,-1)
+    t_shape = t.view(-1,1,1).expand(-1,num_pts,-1)
     dt = t/num_pts
     time_pts = torch.arange(num_pts,device=t.device).unsqueeze(-1) * t_shape/num_pts
     multipliers = torch.ones(num_pts, device=t.device)
