@@ -80,7 +80,7 @@ class CheckerBoard(Dataset):
 
 
 class Spiral(Dataset):
-    def __init__(self, x_scalar=1.0, y_scalar=1.0):
+    def __init__(self, x_scalar=1, y_scalar=1):
         super().__init__(2)
         self.x_scalar = x_scalar
         self.y_scalar = y_scalar
@@ -105,7 +105,7 @@ def get_dataset(opts):
     if opts.dataset == 'gmm':
          return get_gmm(2, None, device='cuda')
     elif opts.dataset == 'spiral':
-        return Spiral(x_scalar=1, y_scalar=1)
+        return Spiral(x_scalar=1., y_scalar=1.)
     elif opts.dataset == 'checkerboard':
         return CheckerBoard()
     else:

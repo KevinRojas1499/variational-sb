@@ -130,7 +130,9 @@ class EpsilonTheta(nn.Module):
         assert t.shape[0] == cond.shape[0] == x.shape[0]
         assert t.min() >= 0 and t.max() <= 1
         assert t.ndim == 1
-
+        # print('------------- Inputs --------------')
+        # print(f'x {x.shape} \n t {t.shape} \n cond {cond.shape}')
+        
         x = self.input_projection(x)
         x = F.leaky_relu(x, 0.4)
 

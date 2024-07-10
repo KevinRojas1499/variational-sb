@@ -34,18 +34,17 @@ class SDE(abc.ABC):
   
   def sample(self, shape, device, backward=True, 
              in_cond=None, prob_flow=True, 
-             cond=None, return_traj=False):
+             cond=None, n_time_pts=100, return_traj=False):
     with torch.no_grad():
       xt = self.prior_sampling(shape,device) if backward else in_cond
       assert xt is not None
-      n_time_pts = 100      
       # step_indices = torch.arange(n_time_pts, device=device)
       # rho = 7
       # time_pts = (self.T ** (1 / rho) + step_indices / (n_time_pts - 1) * (self.delta ** (1 / rho) - self.T ** (1 / rho))) ** rho
       # time_pts = torch.cat([time_pts, torch.zeros_like(time_pts[:1])]) # t_N = 0
       # time_pts = time_pts.flip(dims=(0,))
 
-      time_pts = torch.linspace(self.delta, self.T, n_time_pts, device=device)
+      time_pts = torch.linspace(0. if backward else self.delta, self.T, n_time_pts, device=device)
       if return_traj:
         trajectories = torch.empty((xt.shape[0], n_time_pts, *xt.shape[1:]),device=xt.device) 
 
@@ -190,12 +189,12 @@ class SchrodingerBridge(SDE):
   def beta_int(self, t):
     return self.beta_max * t
   
-  def drift(self, x,t, forward=True):
+  def drift(self, x,t, forward=True, cond=None):
     beta = self.beta(t)
     if forward:
-      return -.5 * beta * x + beta * self.forward_score(x,t)
+      return -.5 * beta * x + beta * self.forward_score(x,t,cond)
     else:
-      return -.5 * beta * x - beta * self.backward_score(x,t)
+      return -.5 * beta * x - beta * self.backward_score(x,t,cond)
   
   def diffusion(self, x,t):
     return self.beta(t)**.5
@@ -203,9 +202,9 @@ class SchrodingerBridge(SDE):
   def prior_sampling(self, shape, device):
     return torch.randn(*shape, dtype=torch.float, device=device)
 
-  def probability_flow_drift(self, xt, t):
+  def probability_flow_drift(self, xt, t, cond=None):
     beta = self.beta(t)
-    return -.5 * beta * (xt - self.forward_score(xt,t) \
+    return -.5 * beta * (xt - self.forward_score(xt,t,cond) \
       + self.backward_score(xt, t))
 
   def get_trajectories_for_loss(self, in_cond, time_pts,forward=True):
@@ -257,15 +256,21 @@ class MomentumSchrodingerBridge(SchrodingerBridge):
   @property
   def T(self):
     return self._T
-  
-  def drift(self,z,t, forward=True):
+
+  def probability_flow_drift(self,z,t, cond=None):
+    beta = self.beta(t)
+    xt,vt = z.chunk(2,dim=1)
+    v_drift = -xt -self.gamma * vt + self.gamma * (self.forward_score(z,t,cond) - self.backward_score(z,t,cond))
+    return .5 * beta * torch.cat((vt,v_drift),dim=1)
+      
+  def drift(self,z,t, forward=True,cond=None):
     beta = self.beta(t)
     xt,vt = z.chunk(2,dim=1)
     if forward:
-      v_drift = -xt - self.gamma * vt + 2 * self.gamma * self.forward_score(z,t)
+      v_drift = -xt - self.gamma * vt + 2 * self.gamma * self.forward_score(z,t,cond)
       return .5 * beta * torch.cat((vt, v_drift),dim=1)
     else:
-      v_drift = -xt - self.gamma * vt - 2 * self.gamma * self.backward_score(z,t)
+      v_drift = -xt - self.gamma * vt - 2 * self.gamma * self.backward_score(z,t,cond)
       return .5 * beta * torch.cat((vt,v_drift),dim=1)
     
   def diffusion(self, z,t):
@@ -331,7 +336,7 @@ class GeneralLinearizedSB(SchrodingerBridge, LinearSDE):
 
   @property
   def forward_score(self):
-    return lambda x,t : batch_matrix_product(self.At(t), x)
+    return lambda x,t,cond=None : batch_matrix_product(self.At(t), x)
   
   @forward_score.setter
   def forward_score(self,forward_model):
@@ -413,7 +418,7 @@ class LinearSchrodingerBridge(GeneralLinearizedSB):
 
   @property
   def forward_score(self):
-    return lambda x,t : batch_matrix_product(self.At(t), x)
+    return lambda x,t, cond=None : batch_matrix_product(self.At(t), x)
   
   @forward_score.setter
   def forward_score(self,forward_model):
@@ -440,7 +445,7 @@ class LinearMomentumSchrodingerBridge(MomentumSchrodingerBridge, GeneralLineariz
 
   @property
   def forward_score(self):
-    return lambda x,t : batch_matrix_product(self.At(t), x)
+    return lambda x,t, cond=None : batch_matrix_product(self.At(t), x)
   
   @forward_score.setter
   def forward_score(self,forward_model):
@@ -460,15 +465,6 @@ class LinearMomentumSchrodingerBridge(MomentumSchrodingerBridge, GeneralLineariz
   def T(self):
     return self._T
   
-  def drift(self,z,t, forward=True):
-    beta = self.beta(t)
-    if forward:
-      return -.5 * beta * batch_matrix_product(self.D(t) , z)
-    else:
-      xt,vt = z.chunk(2,dim=1)
-      d_x = .5 * beta * vt
-      d_v = .5 * beta * (-xt - self.gamma * vt) - self.gamma * beta * self.backward_score(z,t)
-      return torch.cat((d_x,d_v),dim=1)
     
   def diffusion(self, z,t):
     # This was done in an effort to unify the sampling for all the methods

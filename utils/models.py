@@ -43,14 +43,20 @@ class MatrixTimeEmbedding(nn.Module):
         self.out = nn.Linear(128, in_dim * out_dim)
         self.register_buffer('id',torch.eye(out_dim).unsqueeze(0))
         
+        # self.Sigma = nn.Parameter(torch.zeros(in_dim))
+        # self.U = nn.utils.parametrizations.orthogonal(nn.Linear(in_dim, in_dim, bias=False))
+        # self.V = nn.utils.parametrizations.orthogonal(nn.Linear(in_dim, in_dim, bias=False))
+        # self.U.weight = torch.eye(in_dim)
+        # self.V.weight = torch.eye(in_dim)
+        
     def forward(self,t):
         t = t.flatten().unsqueeze(-1)
         # return torch.zeros(t.shape[0],self.out_dim, self.in_dim, device=t.device)
         
         At = self.sequential(t)
         At = self.out(At).view(-1,self.out_dim,self.in_dim)
-        # At[:,:, :self.out_dim] *= self.id
-        # At[:,:, -self.out_dim:] *= self.id
+        At[:,:, :self.out_dim] *= self.id
+        At[:,:, -self.out_dim:] *= self.id
         
         return At
 
@@ -71,7 +77,7 @@ class LinearMLP(nn.Module):
             nn.Linear(128,dim * dim)
         )
         
-    def forward(self,x,t):
+    def forward(self,x,t,cond=None):
         t = t.flatten().unsqueeze(-1)
         A = self.sequential(t).view(-1,self.dim,self.dim)
         
@@ -193,9 +199,9 @@ class ToyPolicy(torch.nn.Module):
         return out
 
 class SimpleNN(nn.Module):
-    def __init__(self, input_dim, hidden_dim, t_embedding_dim):
+    def __init__(self, input_dim, cond_input_dim, hidden_dim, t_embedding_dim):
         super(SimpleNN, self).__init__()
-        self.cond_encoder = nn.LSTM(input_size=input_dim, hidden_size=hidden_dim, num_layers=3,batch_first=True)
+        self.cond_encoder = nn.LSTM(input_size=cond_input_dim, hidden_size=hidden_dim, num_layers=3,batch_first=True)
         self.fc1 = nn.Linear(hidden_dim + t_embedding_dim, input_dim)
         self.fc2 =  nn.Sequential(
             nn.Linear(2 * input_dim,128),

@@ -43,7 +43,8 @@ def linear_sb_loss(sde : SDEs.GeneralLinearizedSB,data):
     times = (torch.rand((data.shape[0]),device=data.device) * (1-eps) + eps) * sde.T
     shaped_t = times.reshape(-1,1,1,1) if len(data.shape) > 2 else times.reshape(-1,1)
     cov, L, big_beta = sde.compute_variance(shaped_t)
-    return linear_sb_loss_given_params(sde,data,times,big_beta, L)
+    aug_data = augment_data(data) if sde.is_augmented else data
+    return linear_sb_loss_given_params(sde,aug_data,times,big_beta, L)
 
 def cld_loss(sde : SDEs.CLD,data,cond=None):
     eps = sde.delta
@@ -152,7 +153,9 @@ def standard_alternate_sb_loss(sde : SDEs.SchrodingerBridge, data,optimize_forwa
     
     return alternate_sb_loss(sde,trajectories,frozen_policy,time_pts,optimize_forward)
 
-def get_loss(sde_name, is_alternate_training):
+def get_loss(sde_name, is_alternate_training, dsm_cool_down):
+    if dsm_cool_down:
+        return linear_sb_loss
     if sde_name == 'vp':
         return dsm_loss
     elif sde_name in ('sb','momentum-sb'):
@@ -164,3 +167,4 @@ def get_loss(sde_name, is_alternate_training):
         return standard_sb_loss
     elif sde_name == 'cld':
         return cld_loss
+    

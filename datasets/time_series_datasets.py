@@ -8,7 +8,7 @@ from gluonts.transform import InstanceSplitter, ExpectedNumInstanceSampler
 from gluonts.torch.batchify import batchify
 
 
-def get_transformed_dataset(name,predict_length, batch_size, num_batches_per_epoch):
+def get_transformed_dataset(name, batch_size, num_batches_per_epoch):
     # TODO : Can I figure out this warning
     warnings.filterwarnings(action='ignore', category=FutureWarning, message=r".*Use a DatetimeIndex.*")
     dataset = get_dataset(name)
@@ -24,9 +24,11 @@ def get_transformed_dataset(name,predict_length, batch_size, num_batches_per_epo
     test_ds = test_grouper(dataset.test)
 
     # Define the transformation
-    prediction_length = predict_length
+    prediction_length = dataset.metadata.prediction_length
     context_length = dataset.metadata.prediction_length * 3
-    print(prediction_length,context_length)    
+    metadata = {'dim' :  int(data_dim),
+                'pred_length' : int(prediction_length),
+                'cond_length' : int(context_length)}
 
     splitter = InstanceSplitter(
         target_field=FieldName.TARGET,
@@ -57,4 +59,4 @@ def get_transformed_dataset(name,predict_length, batch_size, num_batches_per_epo
         num_batches_per_epoch=num_batches_per_epoch,
         stack_fn=batchify
     )
-    return train_dataloader, test_dataloader
+    return train_dataloader, test_dataloader, metadata
