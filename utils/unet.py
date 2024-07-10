@@ -29,7 +29,7 @@ class Dense(nn.Module):
 class ScoreNet(nn.Module):
   """A time-dependent score-based model built upon U-Net architecture."""
 
-  def __init__(self, marginal_prob_std, channels=[32, 64, 128, 256], embed_dim=256):
+  def __init__(self, in_channels=1, channels=[32, 64, 128, 256], embed_dim=256):
     """Initialize a time-dependent score-based network.
 
     Args:
@@ -43,7 +43,7 @@ class ScoreNet(nn.Module):
     self.embed = nn.Sequential(GaussianFourierProjection(embed_dim=embed_dim),
          nn.Linear(embed_dim, embed_dim))
     # Encoding layers where the resolution decreases
-    self.conv1 = nn.Conv2d(1, channels[0], 3, stride=1, bias=False)
+    self.conv1 = nn.Conv2d(in_channels, channels[0], 3, stride=1, bias=False)
     self.dense1 = Dense(embed_dim, channels[0])
     self.gnorm1 = nn.GroupNorm(4, num_channels=channels[0])
     self.conv2 = nn.Conv2d(channels[0], channels[1], 3, stride=2, bias=False)
@@ -70,7 +70,6 @@ class ScoreNet(nn.Module):
     
     # The swish activation function
     self.act = lambda x: x * torch.sigmoid(x)
-    self.marginal_prob_std = marginal_prob_std
   
   def forward(self, x, t, cond=None): 
     # Obtain the Gaussian random feature embedding for t   

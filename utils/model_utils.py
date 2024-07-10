@@ -25,7 +25,7 @@ class PrecondCLD(nn.Module):
         lxx, lxv, lvv = self.sde.marginal_prob_std(t)
         ones = [1] * (len(xt.shape)-1)
         
-        return -vt/(lvv**2+lxv).view(-1,1) - self.net(zt,t,cond)/lvv.view(-1,*ones)
+        return -vt/(lvv**2+lxv).view(-1,*ones) - self.net(zt,t,cond)/lvv.view(-1,*ones)
 
 def get_model(name, sde : SDE, device):
     # Returns model, ema

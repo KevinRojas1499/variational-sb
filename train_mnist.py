@@ -10,17 +10,19 @@ from torchvision.datasets import MNIST
 from tqdm import tqdm
 from utils.misc import dotdict
 
+import utils.losses as losses
 from utils.unet import ScoreNet
-from utils.sde_lib import VP
+from utils.sde_lib import SDE
 from utils.losses import dsm_loss
 from utils.model_utils import get_preconditioned_model
+from utils.sde_lib import get_sde
 
 
-def create_sample_logs(sde : VP, 
+def create_sample_logs(sde : SDE, 
                         batch_size=32, 
                         device='cuda',file_name='mnist_samples.jpeg'):
-    x_mean, traj = sde.sample((batch_size,1,28,28),device,return_traj=False)
-    plot_32_mnist(x_mean,file_name)    
+    x_mean, traj = sde.sample((batch_size,2 if sde.is_augmented else 1,28,28),device,return_traj=False)
+    plot_32_mnist(x_mean[:,0:1],file_name)    
 
     return x_mean
 
@@ -76,8 +78,8 @@ def train(**opts):
     batch_size = opts.batch_size
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-    sde = VP()
-    score_model = torch.nn.DataParallel(ScoreNet(marginal_prob_std=sde.marginal_prob_std))
+    sde = get_sde(opts.sde)
+    score_model = torch.nn.DataParallel(ScoreNet(in_channels=2 if sde.is_augmented else 1))
     # score_model = torch.nn.DataParallel(Precond(32,1))
     # score_model.load_state_dict(torch.load('checkpoints/mnist/ckpt49.pth'))
     score_model = score_model.to(device)
@@ -92,6 +94,9 @@ def train(**opts):
     
     data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=4)
     optimizer = Adam(score_model.parameters(), lr=opts.lr)
+    
+    loss_fn = losses.get_loss(opts.sde, False, False) 
+    
     tqdm_epoch = tqdm(range(opts.num_epochs))
 
     for i in tqdm_epoch:
@@ -99,7 +104,7 @@ def train(**opts):
         num_items = 0
         for x, y in data_loader: # Load data
             x = x.to(device)    
-            loss = dsm_loss(sde, x, score_model)
+            loss = loss_fn(sde, x)
             optimizer.zero_grad()
             loss.backward()    
             optimizer.step()
@@ -114,7 +119,7 @@ def train(**opts):
             
         torch.save(score_model.state_dict(),os.path.join(path, 'backward.pt'))
         
-        create_sample_logs(sde, score_model,file_name=os.path.join(path,f'epoch {i}'))
+        create_sample_logs(sde,file_name=os.path.join(path,f'epoch {i}'))
         
     wandb.finish()
     

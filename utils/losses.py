@@ -26,7 +26,7 @@ def linear_sb_loss_given_params(sde : SDEs.GeneralLinearizedSB,data, times, big_
 
     if sde.is_augmented:
         v_noise = torch.randn_like(data)
-        data = torch.cat((data,v_noise),dim=-1)
+        data = torch.cat((data,v_noise),dim=1)
 
     noise = torch.randn_like(mean,device=data.device)
     perturbed_data = mean + batch_matrix_product(L, noise)
@@ -83,7 +83,7 @@ def joint_sb_loss(sde : SDEs.SchrodingerBridge, in_cond, time_pts):
     
     if sde.is_augmented:
         backward_scores*= sde.gamma**.5
-        aug_backward_score = torch.cat((torch.zeros_like(backward_scores),backward_scores),dim=-1)
+        aug_backward_score = torch.cat((torch.zeros_like(backward_scores),backward_scores),dim=1)
         div_term = (sde.gamma * bt)**.5 * hutch_div(aug_backward_score,flat_traj,time_pts_shaped) 
         # div_term = (sde.gamma * bt)**.5 * batch_div_exact(aug_backward_score,flat_traj,time_pts_shaped) 
     else:
@@ -117,7 +117,7 @@ def alternate_sb_loss(sde : SDEs.SchrodingerBridge,trajectories, frozen_policy, 
     
     if sde.is_augmented:
         opt_policy*= sde.gamma**.5
-        aug_opt_policy = torch.cat((torch.zeros_like(opt_policy),opt_policy),dim=-1)
+        aug_opt_policy = torch.cat((torch.zeros_like(opt_policy),opt_policy),dim=1)
         div_term = (sde.gamma * bt)**.5 * hutch_div(aug_opt_policy,flat_traj,time_pts_shaped) 
         # div_term = (sde.gamma * bt)**.5 * batch_div_exact(aug_backward_score,flat_traj,time_pts_shaped) 
     else:
@@ -136,14 +136,14 @@ def standard_sb_loss(sde : SDEs.SchrodingerBridge, data):
     
     if sde.is_augmented:
         v_noise = torch.randn_like(data)
-        data = torch.cat((data,v_noise),dim=-1)
+        data = torch.cat((data,v_noise),dim=1)
 
     return joint_sb_loss(sde,data,time_pts)
 
 
 def augment_data(data):
     v_noise = torch.randn_like(data)
-    return torch.cat((data,v_noise),dim=-1)
+    return torch.cat((data,v_noise),dim=1)
 
 def standard_alternate_sb_loss(sde : SDEs.SchrodingerBridge, data,optimize_forward, sampling_sde: SDEs.SchrodingerBridge):
     n_times = 100

@@ -555,16 +555,16 @@ class CLD(SDE):
     d_x = beta * v
     d_v = beta * (-x - self.gamma * v)
     if forward:
-      return torch.cat((d_x,d_v),dim=-1)
+      return torch.cat((d_x,d_v),dim=1)
     else:
       return torch.cat((d_x, d_v - 2 * beta * self.gamma * self.backward_score(z,t,cond)),dim=1)
 
   def probability_flow_drift(self, z,t,cond=None):
-    x,v = torch.chunk(z,2,dim=-1)
+    x,v = torch.chunk(z,2,dim=1)
     beta = self.beta(t)
     d_x =  beta * v
     d_v =  beta * (-x - self.gamma * v)
-    return torch.cat((d_x, d_v - self.gamma * beta * self.backward_score(z,t,cond)),dim=-1)
+    return torch.cat((d_x, d_v - self.gamma * beta * self.backward_score(z,t,cond)),dim=1)
   
   def diffusion(self, z,t):
     # This was done in an effort to unify the sampling for all the methods
