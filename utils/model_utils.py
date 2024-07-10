@@ -11,8 +11,8 @@ class PrecondVP(nn.Module):
         self.sde = sde
         
     def forward(self, xt,t,cond=None):
-        
-        return self.net(xt,t,cond)/self.sde.marginal_prob_std(t).view(-1,1)
+        ones = [1] * (len(xt.shape)-1)
+        return self.net(xt,t,cond)/self.sde.marginal_prob_std(t).view(-1,*ones)
 
 class PrecondCLD(nn.Module):
     def __init__(self, net, sde : CLD) -> None:
@@ -23,8 +23,9 @@ class PrecondCLD(nn.Module):
     def forward(self, zt,t,cond=None):
         xt,vt = zt.chunk(2,dim=1)
         lxx, lxv, lvv = self.sde.marginal_prob_std(t)
+        ones = [1] * (len(xt.shape)-1)
         
-        return -vt/(lvv**2+lxv).view(-1,1) - self.net(zt,t,cond)/lvv.view(-1,1)
+        return -vt/(lvv**2+lxv).view(-1,1) - self.net(zt,t,cond)/lvv.view(-1,*ones)
 
 def get_model(name, sde : SDE, device):
     # Returns model, ema

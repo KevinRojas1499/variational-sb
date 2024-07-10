@@ -11,7 +11,9 @@ from utils.misc import batch_matrix_product
 def dsm_loss(sde : SDEs.LinearSDE,data, cond=None):
     eps = sde.delta
     times = (torch.rand((data.shape[0]),device=data.device) * (1-eps) + eps) * sde.T
-    shaped_t = times.reshape(-1,1,1,1) if len(data.shape) > 2 else times.reshape(-1,1)
+    ones = [1] * (len(data.shape)-1)
+    
+    shaped_t = times.reshape(-1,*ones)
     mean, variance = sde.marginal_prob(data,shaped_t)
     noise = torch.randn_like(mean,device=data.device)
     perturbed_data = mean + variance**.5 * noise
@@ -41,7 +43,8 @@ def linear_sb_loss_given_params(sde : SDEs.GeneralLinearizedSB,data, times, big_
 def linear_sb_loss(sde : SDEs.GeneralLinearizedSB,data):
     eps = sde.delta
     times = (torch.rand((data.shape[0]),device=data.device) * (1-eps) + eps) * sde.T
-    shaped_t = times.reshape(-1,1,1,1) if len(data.shape) > 2 else times.reshape(-1,1)
+    ones = [1] * (len(data.shape)-1)
+    shaped_t = times.reshape(-1,*ones)
     cov, L, big_beta = sde.compute_variance(shaped_t)
     aug_data = augment_data(data) if sde.is_augmented else data
     return linear_sb_loss_given_params(sde,aug_data,times,big_beta, L)
@@ -49,7 +52,8 @@ def linear_sb_loss(sde : SDEs.GeneralLinearizedSB,data):
 def cld_loss(sde : SDEs.CLD,data,cond=None):
     eps = sde.delta
     times = (torch.rand((data.shape[0]) ,device=data.device) * (1-eps) + eps) * sde.T
-    shaped_t = times.reshape(-1,1,1,1) if len(data.shape) > 2 else times.reshape(-1,1)
+    ones = [1] * (len(data.shape)-1)
+    shaped_t = times.reshape(-1,*ones)
     ext_data = torch.cat((data,torch.zeros_like(data)),dim=1) # Add velocity
     mean = sde.marginal_prob_mean(ext_data,shaped_t)
     lxx, lxv, lvv = sde.marginal_prob_std(shaped_t)

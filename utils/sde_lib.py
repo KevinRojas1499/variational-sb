@@ -47,7 +47,6 @@ class SDE(abc.ABC):
       time_pts = torch.linspace(0. if backward else self.delta, self.T, n_time_pts, device=device)
       if return_traj:
         trajectories = torch.empty((xt.shape[0], n_time_pts, *xt.shape[1:]),device=xt.device) 
-
       for i, t in enumerate(time_pts):
         if return_traj:
           trajectories[:,i] = xt
@@ -56,13 +55,13 @@ class SDE(abc.ABC):
         dt = time_pts[i+1] - t 
         dt = -dt if backward else dt 
         t_shape = self.T - t if backward else t
-        t_shape = t_shape.unsqueeze(-1).expand(xt.shape[0],1)
+        t_shape = t_shape.unsqueeze(-1).expand(xt.shape[0])
         if prob_flow:
           drift = self.probability_flow_drift(xt,t_shape, cond)
           if backward and i+1 != n_time_pts - 1:
             xt_hat = xt + drift * dt
             t_hat = self.T - time_pts[i+1] if backward else time_pts[i+1]
-            t_hat = t_hat.unsqueeze(-1).expand(xt.shape[0],1)
+            t_hat = t_hat.unsqueeze(-1).expand(xt.shape[0])
             xt = xt + .5 * dt * (drift + self.probability_flow_drift(xt_hat,t_hat,cond))
           else:
             xt = xt + drift * dt

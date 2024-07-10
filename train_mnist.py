@@ -1,42 +1,25 @@
 import torch
+import click
 import wandb
+import os
 import matplotlib.pyplot as plt
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 import torchvision.transforms as transforms
 from torchvision.datasets import MNIST
 from tqdm import tqdm
+from utils.misc import dotdict
 
-from utils.model import ScoreNet
-from utils.networks_edm2 import Precond
+from utils.unet import ScoreNet
 from utils.sde_lib import VP
-from utils.losses import dsm_loss, fp_loss
+from utils.losses import dsm_loss
+from utils.model_utils import get_preconditioned_model
 
 
-def em_sampler(sde : VP, score_model,  
-                           batch_size=32, 
-                           num_steps=500, 
-                           device='cuda',file_name='mnist_samples.jpeg'):
-    ones = torch.ones(batch_size, device=device)
-    time_pts = torch.linspace(0, sde.T - sde.delta, num_steps, device=device)
-    time_pts = torch.cat((time_pts, torch.tensor([sde.T],device=device)))
-    x_t = torch.randn(batch_size, 1, 32, 32, device=device)
-    T = sde.T
-    with torch.no_grad():
-        for i in tqdm(range(num_steps), leave=False):
-            # plot_32_mnist(x_t,f'trajectory/{i}_mnist.jpeg')
-            dt = time_pts[i+1] - time_pts[i]
-            
-            t = ones * time_pts[i]
-            score = score_model(x_t, T - t)
-            # e_h = torch.exp(sde.beta_int(time_pts[i+1]) - sde.beta_int(time_pts[i]))
-            beta = sde.beta(T - time_pts[i]) 
-            # exponential integrator step
-            # x_t = e_h * x_t + 2 * (e_h - 1) * score + (e_h**2 - 1)**.5 * torch.randn_like(x_t)
-            x_mean = x_t + (.5 * beta * x_t + beta * score) * dt
-            x_t = x_mean + (beta * dt)**.5 * torch.randn_like(x_t)
-            
-    x_mean = x_mean.clip(0,1)
+def create_sample_logs(sde : VP, 
+                        batch_size=32, 
+                        device='cuda',file_name='mnist_samples.jpeg'):
+    x_mean, traj = sde.sample((batch_size,1,28,28),device,return_traj=False)
     plot_32_mnist(x_mean,file_name)    
 
     return x_mean
@@ -49,7 +32,7 @@ def plot_32_mnist(x_t,file_name='mnist_samples.jpeg'):
         for j in range(n_cols):
             im = x_t[idx].permute(1,2,0)
             axs[i][j].axis('off')
-            axs[i][j].imshow(im.cpu().numpy(),vmin=0,vmax=1,cmap='grey')
+            axs[i][j].imshow(im.cpu().numpy(),vmin=0,vmax=1,cmap='gray')
             idx+=1
     fig.savefig(file_name)
     plt.close(fig)
@@ -58,35 +41,58 @@ def plot_32_mnist(x_t,file_name='mnist_samples.jpeg'):
 def init_wandb(num_samples):
     wandb.init(
     # set the wandb project where this run will be logged
-    name=f'fp-mine-{num_samples}',
-    project='kinetic-fp',
+    name=f'variational-{num_samples}',
+    project='variational-sb',
     # name= get_run_name(config),
-    tags= ['mnist','fp-quality'],
+    tags= ['mnist'],
     # # track hyperparameters and run metadata
     # config=config
 )
 
-def train(n_epochs=50, batch_size=64, lr=1e-4):
+
+@click.command()
+@click.option('--dataset',type=click.Choice(['mnist']),default='mnist')
+@click.option('--model_forward',type=click.Choice(['unet']), default='unet')
+@click.option('--model_backward',type=click.Choice(['unet']), default='unet')
+@click.option('--precondition', is_flag=True, default=True)
+@click.option('--sde',type=click.Choice(['vp','cld','sb','edm', 'linear-sb','momentum-sb','linear-momentum-sb']), default='vp')
+@click.option('--loss_routine', type=click.Choice(['joint','alternate','variational']),default='alternate')
+@click.option('--dsm_warm_up', type=int, default=2000, help='Perform first iterations using just DSM')
+@click.option('--dsm_cool_down', is_flag=True, default=False, help='Perform last iterations using just DSM for Variational Scores')
+@click.option('--forward_opt_steps', type=int, default=100, help='Number of forward opt steps in alternate training scheme')
+@click.option('--backward_opt_steps', type=int, default=100, help='Number of backward opt steps in alternate training scheme')
+# Training Options
+@click.option('--optimizer',type=click.Choice(['adam','adamw']), default='adam')
+@click.option('--lr', type=float, default=3e-4)
+@click.option('--ema_beta', type=float, default=.99)
+@click.option('--clip_grads', is_flag=True, default=False)
+@click.option('--batch_size', type=int, default=64)
+@click.option('--num_epochs',type=int,default=50)
+@click.option('--dir',type=str)
+@click.option('--load_from_ckpt', type=str)
+def train(**opts):
+    opts = dotdict(opts)
+    print(opts)
+    batch_size = opts.batch_size
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-    print(device)
 
     sde = VP()
     score_model = torch.nn.DataParallel(ScoreNet(marginal_prob_std=sde.marginal_prob_std))
     # score_model = torch.nn.DataParallel(Precond(32,1))
     # score_model.load_state_dict(torch.load('checkpoints/mnist/ckpt49.pth'))
     score_model = score_model.to(device)
-
+    sde.backward_score = get_preconditioned_model(score_model,sde)
     num_params = sum(p.numel() for p in score_model.parameters() if p.requires_grad)
 
     print("Number of parameters in the network:", num_params)
 
     dataset = MNIST('.', train=True, transform=transforms.Compose([transforms.ToTensor(),
-                                                                   transforms.Resize((32,32))]), download=True)
+                                                                   transforms.Resize((28,28))]), download=True)
     init_wandb(num_samples=batch_size)
     
     data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=4)
-    optimizer = Adam(score_model.parameters(), lr=lr)
-    tqdm_epoch = tqdm(range(n_epochs))
+    optimizer = Adam(score_model.parameters(), lr=opts.lr)
+    tqdm_epoch = tqdm(range(opts.num_epochs))
 
     for i in tqdm_epoch:
         avg_loss = 0.
@@ -103,55 +109,14 @@ def train(n_epochs=50, batch_size=64, lr=1e-4):
             tqdm_epoch.set_description('Average Loss: {:5f}'.format(avg_loss / num_items))
             wandb.log({'loss' : loss.item()})
         # Update the checkpoint after each epoch of training.
-        torch.save(score_model.state_dict(), f'checkpoints/mnist/ckpt{i}.pth')
-        em_sampler(sde, score_model,file_name=f'mnist/epoch {i}')
+        path = os.path.join(opts.dir, f'itr_{i+1}/')
+        os.makedirs(path,exist_ok=True) # Still wondering it this is the best idea
+            
+        torch.save(score_model.state_dict(),os.path.join(path, 'backward.pt'))
         
+        create_sample_logs(sde, score_model,file_name=os.path.join(path,f'epoch {i}'))
         
-def eval_fp_loss(n_batches_fp, batch_size_fp):
-    init_wandb(num_samples=n_batches_fp*batch_size_fp)
+    wandb.finish()
     
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-    dataset = MNIST('.', train=True, transform=transforms.ToTensor(), download=True)
-    sde = VP()
-    score_model = torch.nn.DataParallel(ScoreNet(marginal_prob_std=sde.marginal_prob_std))
-    score_model.load_state_dict(torch.load('checkpoints/mnist/ckpt49.pth'))
-    score_model = score_model.to(device)
-    
-    data_loader = DataLoader(dataset, batch_size=batch_size_fp, shuffle=True, num_workers=4)
-    data_iterator = iter(data_loader)
-
-    with torch.no_grad():
-        for t in tqdm(torch.linspace(0.1,sde.T,50, device=device)):
-            fp_loss_ = 0
-            n_items = 0 
-            for _ in tqdm(range(n_batches_fp),leave=False):
-                try:
-                    data, labels = next(data_iterator) 
-                except StopIteration:
-                    data_iterator = iter(data_loader)
-                    data, labels = next(data_iterator)
-                    
-                data = data.to(device)
-                t_shape = t.expand(data.shape[0])
-                mean, var  = sde.marginal_prob(data,t)
-                perturbed_data = mean + var**.5 * torch.randn_like(mean)
-                fp_loss_ += fp_loss(sde,perturbed_data,score_model,t_shape,approx_div=True).detach() * data.shape[0]
-                n_items += data.shape[0]
-            fp_loss_ /= n_items
-            wandb.log({
-                't': t,
-                'fp_loss_t': fp_loss_
-            })
-        
-train()
-# sde = VP()
-
-# device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-# score_model = torch.nn.DataParallel(ScoreNet(marginal_prob_std=sde.marginal_prob_std))
-# score_model.load_state_dict(torch.load('checkpoints/mnist/ckpt49.pth'))
-# score_model = score_model.to(device)
-
-# em_sampler(sde, score_model)
-# eval_fp_loss(50,256)
-
-wandb.finish()
+if __name__ == '__main__':
+    train()
