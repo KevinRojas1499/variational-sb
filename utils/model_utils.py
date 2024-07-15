@@ -3,9 +3,9 @@ import torch
 
 
 from utils.sde_lib import SDE, VP, CLD, GeneralLinearizedSB
-from utils.models import MLP, ToyPolicy, LinearMLP, MatrixTimeEmbedding
+from utils.models import MLP, ToyPolicy, LinearMLP, MatrixTimeEmbedding, DiagonalMatrixTimeEmbedding
 from utils.misc import batch_matrix_product
-
+from utils.unet import ScoreNet
 
 class PrecondVP(nn.Module):
     def __init__(self, net, sde : VP) -> None:
@@ -45,7 +45,8 @@ class PrecondGeneral(nn.Module):
         precond_score = batch_matrix_product(Ltinv,score.view(zt.shape[0],-1)).view(cur_shape)
         return precond_score
 
-def get_model(name, sde : SDE, device):
+def get_model(name, sde : SDE, device, network_opts=None):
+    print(network_opts)
     # Returns model, ema
     augment = sde.is_augmented
     if name == 'mlp':
@@ -55,16 +56,25 @@ def get_model(name, sde : SDE, device):
         return ToyPolicy().requires_grad_(True).to(device=device), \
             ToyPolicy().requires_grad_(False).to(device=device)
     elif name == 'linear':
-        return MatrixTimeEmbedding(in_dim=4 if augment else 2, out_dim=2).requires_grad_(True).to(device=device), \
-            MatrixTimeEmbedding(in_dim=4 if augment else 2, out_dim=2).requires_grad_(False).to(device=device)
-    # elif name == 'linear':
-    #     return LinearMLP(2,False).requires_grad_(True).to(device=device), \
-    #         LinearMLP(2, False).requires_grad_(False).to(device=device)
+        return MatrixTimeEmbedding(in_dim=network_opts.in_dim, out_dim=network_opts.out_dim).requires_grad_(True).to(device=device), \
+            MatrixTimeEmbedding(in_dim=network_opts.in_dim, out_dim=network_opts.out_dim).requires_grad_(False).to(device=device)
+    elif name == 'unet':
+        model = torch.nn.DataParallel(ScoreNet(in_channels=2 if sde.is_augmented else 1))
+        ema = torch.nn.DataParallel(ScoreNet(in_channels=2 if sde.is_augmented else 1))
+        return model.requires_grad_(True).to(device=device), ema.requires_grad_(False).to(device=device)
+    elif name == 'diagonal':
+        model = DiagonalMatrixTimeEmbedding((1,28,28))
+        ema = DiagonalMatrixTimeEmbedding((1,28,28))
+        return model.requires_grad_(True).to(device=device), ema.requires_grad_(False).to(device=device)   
+    # elif name == 'linear': False).requires_grad_(False).to(device=device)
             
+    #     return LinearMLP(2,False).requires_grad_(True).to(device=device), \
+    #         LinearMLP(2,
 def get_preconditioned_model(model, sde):
     if isinstance(sde, VP):
         return PrecondVP(model,sde)
     elif isinstance(sde,CLD):
         return PrecondCLD(model, sde)
     elif isinstance(sde,GeneralLinearizedSB):
-        return PrecondGeneral(model, sde)
+        return model
+        # return PrecondGeneral(model, sde)

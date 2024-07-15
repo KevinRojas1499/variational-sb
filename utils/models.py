@@ -30,6 +30,7 @@ class MLP(nn.Module):
 class MatrixTimeEmbedding(nn.Module):
     def __init__(self, in_dim, out_dim) -> None:
         super().__init__()
+        self.diagonal = False
         self.in_dim = in_dim
         self.out_dim = out_dim
         self.sequential = nn.Sequential(
@@ -58,6 +59,36 @@ class MatrixTimeEmbedding(nn.Module):
         At[:,:, :self.out_dim] *= self.id
         At[:,:, -self.out_dim:] *= self.id
         
+        return At
+
+class DiagonalMatrixTimeEmbedding(nn.Module):
+    def __init__(self, out_shape) -> None:
+        super().__init__()
+        self.diagonal = True
+        self.out_shape = out_shape
+        self.sequential = nn.Sequential(
+            nn.Linear(1,128),
+            nn.SiLU(),
+            nn.Linear(128,256),
+            nn.SiLU(),
+            nn.Linear(256,128),
+            nn.SiLU()
+        )
+        shape_product = torch.tensor(out_shape).prod().item()
+        self.out = nn.Linear(128, shape_product)
+        
+        # self.Sigma = nn.Parameter(torch.zeros(in_dim))
+        # self.U = nn.utils.parametrizations.orthogonal(nn.Linear(in_dim, in_dim, bias=False))
+        # self.V = nn.utils.parametrizations.orthogonal(nn.Linear(in_dim, in_dim, bias=False))
+        # self.U.weight = torch.eye(in_dim)
+        # self.V.weight = torch.eye(in_dim)
+        
+    def forward(self,t):
+        t = t.flatten().unsqueeze(-1)
+        # return torch.zeros(t.shape[0],self.out_dim, self.in_dim, device=t.device)
+        
+        At = self.sequential(t)
+        At = self.out(At).view(-1,*self.out_shape)
         return At
 
 class LinearMLP(nn.Module):

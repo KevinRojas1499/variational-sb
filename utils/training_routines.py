@@ -131,6 +131,97 @@ class VariationalDiffusionTrainingRoutine():
                 self.refresh_forward(data)
             return losses.alternate_sb_loss(self.sb,self.trajectories,self.frozen_policy,self.time_pts,optimize_forward=True)
 
+class VariationalDiffusionTrainingRoutineEpoch():
+    def __init__(self,sb : SDEs.GeneralLinearizedSB, sampling_sb : SDEs.GeneralLinearizedSB,
+                 model_forward, model_backward, 
+                 num_epochs_dsm_warm_up, num_epochs_middle, num_epochs_dsm_cool_down,
+                 num_iters_forward, num_iters_backward, n_time_pts, device):
+        self.sb = sb
+        self.sampling_sb = sampling_sb
+        if self.sb.is_augmented:
+            self.base_sde = SDEs.CLD(T=self.sb.T, delta=self.sb.delta, beta_max=self.sb.beta_max, model_backward=model_backward)
+        else:
+            self.base_sde = SDEs.VP(T=self.sb.T,delta=self.sb.delta,beta_max=self.sb.beta_max,model_backward=model_backward)
+        self.model_forward = model_forward
+        self.model_backward = model_backward
+        self.trajectories = None
+        self.frozen_policy = None
+        self.time_pts = torch.linspace(0., sb.T,n_time_pts,device=device)
+        self.num_epochs_dsm_warm_up = num_epochs_dsm_warm_up
+        self.num_epochs_middle_stage = num_epochs_middle 
+        self.num_epochs_dsm_cool_down = num_epochs_dsm_cool_down
+        
+        self.num_iters_forward = num_iters_forward
+        self.num_iters_backward = num_iters_backward
+        self.refresh_rate = self.num_iters_backward + self.num_iters_forward
+        # Parameters for loss fn in backward variational  optimization
+        self.loss_times = None
+        self.big_betas = None
+        self.Ls = None
+
+    def freeze_models(self, optimizing_forward):
+        if optimizing_forward:
+            self.model_backward.requires_grad_(False)
+            self.model_forward.requires_grad_(True)
+        else:
+            self.model_forward.requires_grad_(False)
+            self.model_backward.requires_grad_(True)
+
+    
+    def get_training_stage(self, epoch, itr):
+        if epoch < self.num_epochs_dsm_warm_up:
+            return 'dsm'
+        elif epoch < self.num_epochs_dsm_warm_up + self.num_epochs_middle_stage:
+            if itr % self.refresh_rate < self.num_iters_backward:
+                return 'backward'
+            else:
+                return 'forward'
+        else:
+            return 'backward'
+
+
+    def refresh_forward(self, data):
+        if self.sb.is_augmented:
+            data = losses.augment_data(data)
+        in_cond = self.sb.prior_sampling((*data.shape,),device=data.device)
+        xt, trajectories, frozen_policy = self.sampling_sb.get_trajectories_for_loss(in_cond, self.time_pts,forward=False)
+        self.trajectories = trajectories.detach_()
+        self.frozen_policy = frozen_policy.detach_()      
+        
+        self.freeze_models(optimizing_forward=True)    
+    
+    def refresh_backward(self, data):
+        self.loss_times = torch.linspace(self.sb.delta, self.sb.T, 1500, device=data.device)
+        ones = [1] * (len(data.shape)-1)
+        shaped_t = self.loss_times.reshape(-1,*ones)
+        _, Ls, big_betas = self.sb.compute_variance(shaped_t)
+        self.Ls = Ls.detach().clone()
+        self.big_betas = big_betas.detach().clone()
+        self.freeze_models(optimizing_forward=False)    
+            
+                
+    def training_iteration(self, epoch, itr, data):
+        if itr != 0 :
+            prev_stage = self.get_training_stage(epoch, itr-1)
+        else:
+            prev_stage = self.get_training_stage(epoch-1, 938)
+        stage = self.get_training_stage(epoch, itr)
+        if stage == 'dsm':
+            if self.sb.is_augmented:
+                return losses.cld_loss(self.base_sde,data)
+            else:
+                return losses.dsm_loss(self.base_sde,data)
+        elif stage == 'backward':
+            if prev_stage != stage:
+                self.refresh_backward(data)
+            aug_data = losses.augment_data(data) if self.sb.is_augmented else data
+            rand_idx = torch.randint(0,self.loss_times.shape[0],(data.shape[0],), device=data.device)
+            return losses.linear_sb_loss_given_params(self.sb, aug_data,self.loss_times[rand_idx],self.big_betas[rand_idx],self.Ls[rand_idx])
+        elif stage == 'forward':
+            if prev_stage != stage:
+                self.refresh_forward(data)
+            return losses.alternate_sb_loss(self.sb,self.trajectories,self.frozen_policy,self.time_pts,optimize_forward=True)
+        
 class EvalLossRoutine():
     def __init__(self, loss_fn):
         self.loss_fn = loss_fn

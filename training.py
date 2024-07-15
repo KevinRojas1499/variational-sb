@@ -80,12 +80,16 @@ def training(**opts):
     sde = get_sde(opts.sde)
     sampling_sde = get_sde(opts.sde)
     # Set up backwards model
-    model_backward, ema_backward = get_model(opts.model_backward,sde, device)
+    network_opts = dotdict({
+        'in_dim'  : 4,
+        'out_dim' : 2 
+    })
+    model_backward, ema_backward = get_model(opts.model_backward,sde, device,network_opts=network_opts)
     sde.backward_score = model_backward
     sampling_sde.backward_score = ema_backward
     if is_sb:
         # We need a forward model
-        model_forward , ema_forward  = get_model(opts.model_forward,sde,device)
+        model_forward , ema_forward  = get_model(opts.model_forward,sde,device,network_opts=network_opts)
         sde.forward_score = model_forward
         sampling_sde.forward_score = ema_forward
         
