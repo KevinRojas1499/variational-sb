@@ -21,33 +21,27 @@ def dsm_loss(sde : SDEs.LinearSDE,data, cond=None):
     
     return torch.mean(torch.sum(flatten_error,dim=1))
 
-def linear_sb_loss_given_params(sde : SDEs.GeneralLinearizedSB,data, times, big_beta, L):
-    mean = batch_matrix_product(big_beta,data)
-
-    if sde.is_augmented:
-        v_noise = torch.randn_like(data)
-        data = torch.cat((data,v_noise),dim=1)
-
-    noise = torch.randn_like(mean,device=data.device)
-    perturbed_data = mean + batch_matrix_product(L, noise)
-    score = sde.backward_score(perturbed_data,times)
-    if sde.is_augmented:
-        big_model = torch.cat((torch.zeros_like(score),score),dim=1)
-        pert_model = batch_matrix_product(L.mT, big_model).chunk(2,dim=1)[1]
-        flatten_error = ((noise.chunk(2,dim=1)[1] + pert_model)**2).view(data.shape[0],-1)
-    else:
-        # flatten_error = ((batch_matrix_product(invL.mT, noise) + score)**2).view(data.shape[0],-1)
-        flatten_error = ((noise + batch_matrix_product(L.mT, score))**2).view(data.shape[0],-1)
-    return torch.mean(torch.sum(flatten_error,dim=1))
-
-def linear_sb_loss(sde : SDEs.GeneralLinearizedSB,data):
+def linear_sb_loss(sde : SDEs.LinearSDE,data, cond=None):
     eps = sde.delta
     times = (torch.rand((data.shape[0]),device=data.device) * (1-eps) + eps) * sde.T
     ones = [1] * (len(data.shape)-1)
+    
     shaped_t = times.reshape(-1,*ones)
-    cov, L, big_beta = sde.compute_variance(shaped_t)
-    aug_data = augment_data(data) if sde.is_augmented else data
-    return linear_sb_loss_given_params(sde,aug_data,times,big_beta, L)
+    # data = augment_data(data) if sde.is_augmented else data
+    mean, std = sde.marginal_prob(data,shaped_t)
+    noise = torch.randn_like(mean,device=data.device)
+    if sde.is_augmented:
+        noise_x, noise_v = noise.chunk(2, dim=1)
+        new_noise_x = std[...,0,0] * noise_x
+        new_noise_v = std[...,1,0] * noise_x + std[...,1,1] * noise_v
+        perturbed_data = mean + torch.cat((new_noise_x, new_noise_v),dim=1)
+        flatten_error = ((std[...,1,1]  * sde.backward_score(perturbed_data,times,cond) + noise_v)**2).view(data.shape[0],-1)
+    else:
+        perturbed_data = mean + std * noise
+        flatten_error = ((std * sde.backward_score(perturbed_data,times,cond) + noise)**2).view(data.shape[0],-1)
+        
+    return torch.mean(torch.sum(flatten_error,dim=1))
+
 
 def cld_loss(sde : SDEs.CLD,data,cond=None):
     eps = sde.delta

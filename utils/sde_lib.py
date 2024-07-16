@@ -1,7 +1,7 @@
 """Abstract SDE classes, Reverse SDE, and VE/VP SDEs."""
 import abc
 import torch
-
+import numpy as np
 from utils.misc import batch_matrix_product
 
 class SDE(abc.ABC):
@@ -340,10 +340,6 @@ class GeneralLinearizedSB(SchrodingerBridge, LinearSDE):
   @forward_score.setter
   def forward_score(self,forward_model):
     self.At = forward_model
-  
-  @abc.abstractmethod
-  def D(self,t):
-    pass
 
   @property
   def T(self):
@@ -355,51 +351,41 @@ class GeneralLinearizedSB(SchrodingerBridge, LinearSDE):
   def beta_int(self, t):
     return self.beta_max * t
   
-  def int_beta_ds(self, t):
-    # Curently using Simpsons Method
-    num_pts = 1000
-    t_shape = t.view(-1,1,1).expand(-1,num_pts,-1)
-    dt = t/num_pts
-    time_pts = torch.arange(num_pts,device=t.device).unsqueeze(-1) * t_shape/num_pts
-    multipliers = torch.ones(num_pts, device=t.device)
-    multipliers[1:-1:2] = 4
-    multipliers[2:-1:2] = 2
-    multipliers = multipliers.view(1,-1,1,1)
-    Ats = self.D(time_pts.view(-1,1))
-    Ats = Ats.view(-1,num_pts, Ats.shape[-1], Ats.shape[-1])
-    betas = self.beta(time_pts)#.unsqueeze(-1)
-    return torch.sum(betas * Ats * multipliers,dim=1) * dt.unsqueeze(-1)/3
+  # def int_beta_ds(self, t):
+  #   # Curently using Simpsons Method
+  #   num_pts = 1000
+  #   t_shape = t.view(-1,1,1).expand(-1,num_pts,-1)
+  #   dt = t/num_pts
+  #   time_pts = torch.arange(num_pts,device=t.device).unsqueeze(-1) * t_shape/num_pts
+  #   multipliers = torch.ones(num_pts, device=t.device)
+  #   multipliers[1:-1:2] = 4
+  #   multipliers[2:-1:2] = 2
+  #   multipliers = multipliers.view(1,-1,1,1)
+  #   Ats = self.D(time_pts.view(-1,1))
+  #   Ats = Ats.view(-1,num_pts, Ats.shape[-1], Ats.shape[-1])
+  #   betas = self.beta(time_pts)#.unsqueeze(-1)
+  #   return torch.sum(betas * Ats * multipliers,dim=1) * dt.unsqueeze(-1)/3
 
-  def compute_variance(self, t):
-    int_mat = self.int_beta_ds(t)
-    dim = int_mat.shape[-1]
-    ch_power = torch.zeros((t.shape[0], 2 * dim, 2 * dim),device=int_mat.device)
-    ch_power[:,:dim, :dim] = -.5 * int_mat
-    ch_power[:,dim:, dim:] = .5 * int_mat.mH
-    if self.is_augmented:
-      k = dim//2
-      ch_power[:, k:dim, dim+k:] = self.gamma * self.beta_int(t).view(-1,1,1) * torch.eye(k,device=int_mat.device).unsqueeze(0).expand(t.shape[0],-1,-1)
-    else:
-      ch_power[:, :dim, dim:] = self.beta_int(t).view(-1,1,1) * torch.eye(dim,device=int_mat.device).unsqueeze(0).expand(t.shape[0],-1,-1)
-    ch_pair = torch.linalg.matrix_exp(ch_power)
-    C = ch_pair[:, :dim, dim:]
-    H_inv = ch_pair[:, :dim, :dim].mH
-    cov = C @ H_inv
-    L = torch.linalg.cholesky(cov)
-    return cov, L, H_inv.mH # Cov, L, exp([-.5 bD]_t)
+  # def compute_variance(self, t):
+  #   int_mat = self.int_beta_ds(t)
+  #   dim = int_mat.shape[-1]
+  #   ch_power = torch.zeros((t.shape[0], 2 * dim, 2 * dim),device=int_mat.device)
+  #   ch_power[:,:dim, :dim] = -.5 * int_mat
+  #   ch_power[:,dim:, dim:] = .5 * int_mat.mH
+  #   if self.is_augmented:
+  #     k = dim//2
+  #     ch_power[:, k:dim, dim+k:] = self.gamma * self.beta_int(t).view(-1,1,1) * torch.eye(k,device=int_mat.device).unsqueeze(0).expand(t.shape[0],-1,-1)
+  #   else:
+  #     ch_power[:, :dim, dim:] = self.beta_int(t).view(-1,1,1) * torch.eye(dim,device=int_mat.device).unsqueeze(0).expand(t.shape[0],-1,-1)
+  #   ch_pair = torch.linalg.matrix_exp(ch_power)
+  #   C = ch_pair[:, :dim, dim:]
+  #   H_inv = ch_pair[:, :dim, :dim].mH
+  #   cov = C @ H_inv
+  #   L = torch.linalg.cholesky(cov)
+  #   return cov, L, H_inv.mH # Cov, L, exp([-.5 bD]_t)
   
-  def marginal_prob(self, x, t):
-    # If    x is of shape [B, H, W, C]
-    # then  t is of shape [B, 1, 1, 1] 
-    # And similarly for other shapes
-    cov, L, big_beta = self.compute_variance(t)
-    return batch_matrix_product(big_beta, x), L
-  
-   
   def prior_sampling(self, shape, device):
     return torch.randn(*shape, dtype=torch.float, device=device)
-    L = self.compute_variance(torch.tensor([[self.T]],device=device))[1][0]
-    return (L @ torch.randn(*shape, dtype=torch.float, device=device).T).T
 
 
 class LinearSchrodingerBridge(GeneralLinearizedSB):
@@ -409,7 +395,7 @@ class LinearSchrodingerBridge(GeneralLinearizedSB):
   """
   def __init__(self,T=1.,delta=1e-3, beta_max=10, forward_model=None, backward_model=None):
     """ Here the backward model is a standard backwards score
-        The forward model is such that it receives t of shape [bs,1] and outputs a matrix [bs, d,d]
+        The forward model is such that it receives t of shape [bs] and outputs a matrix [bs, shape of input]
         The dimension is infered from the forward model, so if it doesn't behave in this way it won't work
         We internally assign the forward model to be the multiplication against this matrix
     """
@@ -417,16 +403,35 @@ class LinearSchrodingerBridge(GeneralLinearizedSB):
 
   @property
   def forward_score(self):
-    return lambda x,t, cond=None : batch_matrix_product(self.At(t), x)
+    return lambda x,t, cond=None : self.At(t) *  x
   
   @forward_score.setter
   def forward_score(self,forward_model):
     self.At = forward_model
   
-  def D(self,t):
-    mat = self.At(t) 
-    id = torch.eye(mat.shape[-1], device=mat.device).unsqueeze(0)
-    return id - 2 * (mat + mat.mT)
+  def integrate_forward_score(self, t):
+    # Curently using Simpsons Method\
+    num_pts = 1000
+    t_shape = t.flatten().view(-1,1,1).expand(-1,num_pts,-1)
+    dt = t/num_pts
+    time_pts = torch.arange(num_pts,device=t.device).unsqueeze(-1) * t_shape/num_pts
+    multipliers = torch.ones(num_pts, device=t.device)
+    multipliers[1:-1:2] = 4
+    multipliers[2:-1:2] = 2
+    multipliers = multipliers.view(1,-1,1)
+    Ats = self.At(time_pts.view(-1,1))
+    Ats = Ats.view(-1,num_pts, *Ats.shape[1:])
+    res = torch.sum(Ats * multipliers,dim=1) * dt.view(-1,1)/3
+    return res
+
+
+  def marginal_prob(self, x, t):
+    # If    x is of shape [B, H, W, C]
+    # then  t is of shape [B, 1, 1, 1] 
+    # And similarly for other shapes
+    scale = torch.exp(-.5 * (self.beta_int(t) - 2 * self.integrate_forward_score(t)))
+    return scale * x, (1-scale**2).sqrt()
+  
 
 class LinearMomentumSchrodingerBridge(MomentumSchrodingerBridge, GeneralLinearizedSB):
   """ 
@@ -444,7 +449,11 @@ class LinearMomentumSchrodingerBridge(MomentumSchrodingerBridge, GeneralLineariz
 
   @property
   def forward_score(self):
-    return lambda x,t, cond=None : batch_matrix_product(self.At(t), x)
+    def f_score(z,t,cond=None):
+      x,v = z.chunk(2,dim=1)
+      at,ct = self.At(t).chunk(2,dim=1)
+      return at * x + ct * v
+    return f_score
   
   @forward_score.setter
   def forward_score(self,forward_model):
@@ -464,6 +473,20 @@ class LinearMomentumSchrodingerBridge(MomentumSchrodingerBridge, GeneralLineariz
   def T(self):
     return self._T
   
+  def integrate_forward_score(self, t):
+    # Curently using Simpsons Method\
+    num_pts = 1000
+    t_shape = t.flatten().view(-1,1,1).expand(-1,num_pts,-1)
+    dt = t/num_pts
+    time_pts = torch.arange(num_pts,device=t.device).unsqueeze(-1) * t_shape/num_pts
+    multipliers = torch.ones(num_pts, device=t.device)
+    multipliers[1:-1:2] = 4
+    multipliers[2:-1:2] = 2
+    multipliers = multipliers.view(1,-1,1)
+    Ats = self.At(time_pts.view(-1,1)) * self.beta(time_pts.view(-1,1))
+    Ats = Ats.view(-1,num_pts, *Ats.shape[1:])
+    res = torch.sum(Ats * multipliers,dim=1) * dt.view(-1,1)/3
+    return res
     
   def diffusion(self, z,t):
     # This was done in an effort to unify the sampling for all the methods
@@ -472,7 +495,51 @@ class LinearMomentumSchrodingerBridge(MomentumSchrodingerBridge, GeneralLineariz
     ones = torch.ones_like(v)
     return (self.beta(t) * self.gamma)**.5 * torch.cat((zeros,ones),dim=1)
   
+  def get_M_matrix(self, x, t):
+    x_dim = np.prod(x.shape)//2 #Divide by 2 because is augmented
+    M = torch.zeros((x_dim,2,2))
+    at,ct = self.integrate_forward_score(t).chunk(2,dim=1)
+    betaaa = self.beta_int(t).expand_as(at).flatten()
+    at = at.flatten()
+    ct = ct.flatten()
   
+    M[:,0,1] = betaaa
+    M[:,1,0] = 2 * self.gamma * at - betaaa
+    M[:,1,1] = 2 * self.gamma * ct - self.gamma * betaaa
+  
+    M/=2
+    return M , betaaa
+
+
+  def get_std_and_int_D(self, z, t):
+    # If    x is of shape [B, H, W, C]
+    # then  t is of shape [B, 1, 1, 1] 
+    # And similarly for other shapes
+    M, beta_int = self.get_M_matrix(z, t)
+    ch_power = torch.zeros((M.shape[0], 4, 4),device=z.device)
+    ch_power[:,:2, :2] = M
+    ch_power[:,2:, 2:] = -M.mT
+    ch_power[:, 1, 3] = self.gamma * beta_int
+    ch_pair = torch.linalg.matrix_exp(ch_power)
+    C = ch_pair[:, :2, 2:]
+    H_inv = ch_pair[:, :2, :2].mT
+    cov = C @ H_inv
+    L = torch.linalg.cholesky(cov)
+    return L.reshape((z.shape[0],z.shape[1]//2,*z.shape[2:],2,2)), H_inv.mH.reshape((z.shape[0],z.shape[1]//2,*z.shape[2:],2,2))
+  
+  def marginal_prob(self, z, t):
+    # If    x is of shape [B, H, W, C]
+    # then  t is of shape [B, 1, 1, 1] 
+    # And similarly for other shapes
+    L, H_inv = self.get_std_and_int_D(z,t)
+    
+    x,v = z.chunk(2,dim=1)
+    new_x = H_inv[...,0,0] * x + H_inv[...,0,1] * v
+    new_v = H_inv[...,1,0] * x + H_inv[...,1,1] * v
+    
+    return torch.cat((new_x,new_v),dim=1), L
+
+
 
 class CLD(SDE):
   # We assume that images have shape [B, C, H, W] 

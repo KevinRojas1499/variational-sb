@@ -121,10 +121,11 @@ class VariationalDiffusionTrainingRoutine():
             else:
                 return losses.dsm_loss(self.base_sde,data)
         elif stage == 'backward':
-            if prev_stage != stage:
-                self.refresh_backward(data)
+            # if prev_stage != stage:
+            #     self.refresh_backward(data)
             aug_data = losses.augment_data(data) if self.sb.is_augmented else data
-            rand_idx = torch.randint(0,self.loss_times.shape[0],(data.shape[0],), device=data.device)
+            # rand_idx = torch.randint(0,self.loss_times.shape[0],(data.shape[0],), device=data.device)
+            return losses.linear_sb_loss(self.sb,aug_data)
             return losses.linear_sb_loss_given_params(self.sb, aug_data,self.loss_times[rand_idx],self.big_betas[rand_idx],self.Ls[rand_idx])
         elif stage == 'forward':
             if prev_stage != stage:

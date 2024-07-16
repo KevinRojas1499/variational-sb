@@ -3,7 +3,7 @@ import torch
 
 
 from utils.sde_lib import SDE, VP, CLD, GeneralLinearizedSB
-from utils.models import MLP, ToyPolicy, LinearMLP, MatrixTimeEmbedding, DiagonalMatrixTimeEmbedding
+from utils.models import MLP, MatrixTimeEmbedding
 from utils.misc import batch_matrix_product
 from utils.unet import ScoreNet
 
@@ -52,24 +52,13 @@ def get_model(name, sde : SDE, device, network_opts=None):
     if name == 'mlp':
         return MLP(2,augment).requires_grad_(True).to(device=device), \
             MLP(2, augment).requires_grad_(False).to(device=device)
-    elif name == 'toy':
-        return ToyPolicy().requires_grad_(True).to(device=device), \
-            ToyPolicy().requires_grad_(False).to(device=device)
     elif name == 'linear':
-        return MatrixTimeEmbedding(in_dim=network_opts.in_dim, out_dim=network_opts.out_dim).requires_grad_(True).to(device=device), \
-            MatrixTimeEmbedding(in_dim=network_opts.in_dim, out_dim=network_opts.out_dim).requires_grad_(False).to(device=device)
+        return MatrixTimeEmbedding(out_shape=network_opts.out_shape).requires_grad_(True).to(device=device), \
+            MatrixTimeEmbedding(out_shape=network_opts.out_shape).requires_grad_(False).to(device=device)
     elif name == 'unet':
         model = torch.nn.DataParallel(ScoreNet(in_channels=2 if sde.is_augmented else 1))
         ema = torch.nn.DataParallel(ScoreNet(in_channels=2 if sde.is_augmented else 1))
-        return model.requires_grad_(True).to(device=device), ema.requires_grad_(False).to(device=device)
-    elif name == 'diagonal':
-        model = DiagonalMatrixTimeEmbedding((1,28,28))
-        ema = DiagonalMatrixTimeEmbedding((1,28,28))
-        return model.requires_grad_(True).to(device=device), ema.requires_grad_(False).to(device=device)   
-    # elif name == 'linear': False).requires_grad_(False).to(device=device)
-            
-    #     return LinearMLP(2,False).requires_grad_(True).to(device=device), \
-    #         LinearMLP(2,
+        return model.requires_grad_(True).to(device=device), ema.requires_grad_(False).to(device=device) 
 def get_preconditioned_model(model, sde):
     if isinstance(sde, VP):
         return PrecondVP(model,sde)

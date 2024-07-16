@@ -50,8 +50,8 @@ def default_log_rate(ctx, param, value):
 
 @click.command()
 @click.option('--dataset',type=click.Choice(['gmm','spiral','checkerboard']))
-@click.option('--model_forward',type=click.Choice(['mlp','toy','linear']), default='mlp')
-@click.option('--model_backward',type=click.Choice(['mlp','toy','linear']), default='mlp')
+@click.option('--model_forward',type=click.Choice(['mlp','linear']), default='mlp')
+@click.option('--model_backward',type=click.Choice(['mlp','linear']), default='mlp')
 @click.option('--precondition', is_flag=True, default=False)
 @click.option('--sde',type=click.Choice(['vp','cld','sb','edm', 'linear-sb','momentum-sb','linear-momentum-sb']), default='vp')
 @click.option('--loss_routine', type=click.Choice(['joint','alternate','variational']),default='alternate')
@@ -81,8 +81,7 @@ def training(**opts):
     sampling_sde = get_sde(opts.sde)
     # Set up backwards model
     network_opts = dotdict({
-        'in_dim'  : 4,
-        'out_dim' : 2 
+        'out_shape' : [4 if sde.is_augmented else 2] 
     })
     model_backward, ema_backward = get_model(opts.model_backward,sde, device,network_opts=network_opts)
     sde.backward_score = model_backward
