@@ -67,17 +67,12 @@ class VariationalDiffusionTrainingRoutine():
         self.refresh_rate = self.num_iters_backward + self.num_iters_forward
         # Parameters for loss fn in backward variational  optimization
         self.loss_times = None
-        self.big_betas = None
-        self.Ls = None
+        self.scales = None
+        self.stds = None
 
     def freeze_models(self, optimizing_forward):
-        if optimizing_forward:
-            self.model_backward.requires_grad_(False)
-            self.model_forward.requires_grad_(True)
-        else:
-            self.model_forward.requires_grad_(False)
-            self.model_backward.requires_grad_(True)
-
+        self.model_forward.requires_grad_(optimizing_forward)
+        self.model_backward.requires_grad_(not optimizing_forward)
     
     def get_training_stage(self, itr):
         if itr < self.num_iters_dsm_warm_up:
@@ -106,9 +101,9 @@ class VariationalDiffusionTrainingRoutine():
         self.loss_times = torch.linspace(self.sb.delta, self.sb.T, 1500, device=data.device)
         ones = [1] * (len(data.shape)-1)
         shaped_t = self.loss_times.reshape(-1,*ones)
-        _, Ls, big_betas = self.sb.compute_variance(shaped_t)
-        self.Ls = Ls.detach().clone()
-        self.big_betas = big_betas.detach().clone()
+        scale, Ls = self.sb.get_transition_params(torch.empty((self.loss_times.shape[0], *data.shape[1:]),device=data.device), shaped_t)
+        self.stds = Ls.detach().clone()
+        self.scales = scale.detach().clone()
         self.freeze_models(optimizing_forward=False)    
             
                 
@@ -121,12 +116,11 @@ class VariationalDiffusionTrainingRoutine():
             else:
                 return losses.dsm_loss(self.base_sde,data)
         elif stage == 'backward':
-            # if prev_stage != stage:
-            #     self.refresh_backward(data)
             aug_data = losses.augment_data(data) if self.sb.is_augmented else data
-            # rand_idx = torch.randint(0,self.loss_times.shape[0],(data.shape[0],), device=data.device)
-            return losses.linear_sb_loss(self.sb,aug_data)
-            return losses.linear_sb_loss_given_params(self.sb, aug_data,self.loss_times[rand_idx],self.big_betas[rand_idx],self.Ls[rand_idx])
+            if prev_stage != stage:
+                self.refresh_backward(aug_data)
+            rand_idx = torch.randint(0,self.loss_times.shape[0],(data.shape[0],), device=data.device)
+            return losses.linear_sb_loss_given_params(self.sb,aug_data,self.loss_times[rand_idx],self.scales[rand_idx],self.stds[rand_idx])
         elif stage == 'forward':
             if prev_stage != stage:
                 self.refresh_forward(data)

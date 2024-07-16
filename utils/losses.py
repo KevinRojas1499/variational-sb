@@ -2,7 +2,6 @@ import torch
 import utils.sde_lib as SDEs
 
 from utils.diff import batch_div_exact, hutch_div
-from utils.misc import batch_matrix_product
 
 #######################################
 #          Diffusion Losses           #
@@ -21,13 +20,32 @@ def dsm_loss(sde : SDEs.LinearSDE,data, cond=None):
     
     return torch.mean(torch.sum(flatten_error,dim=1))
 
+def linear_sb_loss_given_params(sde : SDEs.LinearSDE, data, times, scale, std, cond=None):
+    noise = torch.randn_like(data,device=data.device)
+    if sde.is_augmented:
+        x,v = data.chunk(2,dim=1)
+        new_x = scale[...,0,0] * x + scale[...,0,1] * v
+        new_v = scale[...,1,0] * x + scale[...,1,1] * v
+        
+        mean = torch.cat((new_x,new_v),dim=1)
+
+        noise_x, noise_v = noise.chunk(2, dim=1)
+        new_noise_x = std[...,0,0] * noise_x
+        new_noise_v = std[...,1,0] * noise_x + std[...,1,1] * noise_v
+        perturbed_data = mean + torch.cat((new_noise_x, new_noise_v),dim=1)
+        flatten_error = ((std[...,1,1]  * sde.backward_score(perturbed_data,times,cond) + noise_v)**2).view(data.shape[0],-1)
+    else:
+        perturbed_data = mean + std * noise
+        flatten_error = ((std * sde.backward_score(perturbed_data,times,cond) + noise)**2).view(data.shape[0],-1)
+    
+    return torch.mean(torch.sum(flatten_error,dim=1))
+     
 def linear_sb_loss(sde : SDEs.LinearSDE,data, cond=None):
     eps = sde.delta
     times = (torch.rand((data.shape[0]),device=data.device) * (1-eps) + eps) * sde.T
     ones = [1] * (len(data.shape)-1)
     
     shaped_t = times.reshape(-1,*ones)
-    # data = augment_data(data) if sde.is_augmented else data
     mean, std = sde.marginal_prob(data,shaped_t)
     noise = torch.randn_like(mean,device=data.device)
     if sde.is_augmented:

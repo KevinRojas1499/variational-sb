@@ -2,7 +2,6 @@
 import abc
 import torch
 import numpy as np
-from utils.misc import batch_matrix_product
 
 class SDE(abc.ABC):
   def __init__(self, is_augmented):
@@ -349,11 +348,15 @@ class LinearSchrodingerBridge(SchrodingerBridge, LinearSDE):
     multipliers[1:-1:2] = 4
     multipliers[2:-1:2] = 2
     multipliers = multipliers.view(1,-1,1)
-    Ats = self.At(time_pts.view(-1,1))
+    Ats = self.At(time_pts.view(-1,1)) * self.beta(time_pts.view(-1,1))
     Ats = Ats.view(-1,num_pts, *Ats.shape[1:])
     res = torch.sum(Ats * multipliers,dim=1) * dt.view(-1,1)/3
     return res
 
+  def get_transition_params(self, x, t):
+    scale = torch.exp(-.5 * (self.beta_int(t) - 2 * self.integrate_forward_score(t)))
+    
+    return scale, (1-scale**2).sqrt()
 
   def marginal_prob(self, x, t):
     # If    x is of shape [B, H, W, C]
@@ -442,7 +445,7 @@ class LinearMomentumSchrodingerBridge(MomentumSchrodingerBridge, LinearSDE):
     return M , betaaa
 
 
-  def get_std_and_int_D(self, z, t):
+  def get_transition_params(self, z, t):
     # If    x is of shape [B, H, W, C]
     # then  t is of shape [B, 1, 1, 1] 
     # And similarly for other shapes
@@ -456,13 +459,13 @@ class LinearMomentumSchrodingerBridge(MomentumSchrodingerBridge, LinearSDE):
     H_inv = ch_pair[:, :2, :2].mT
     cov = C @ H_inv
     L = torch.linalg.cholesky(cov)
-    return L.reshape((z.shape[0],z.shape[1]//2,*z.shape[2:],2,2)), H_inv.mH.reshape((z.shape[0],z.shape[1]//2,*z.shape[2:],2,2))
+    return H_inv.mH.reshape((z.shape[0],z.shape[1]//2,*z.shape[2:],2,2)), L.reshape((z.shape[0],z.shape[1]//2,*z.shape[2:],2,2))
   
   def marginal_prob(self, z, t):
     # If    x is of shape [B, H, W, C]
     # then  t is of shape [B, 1, 1, 1] 
     # And similarly for other shapes
-    L, H_inv = self.get_std_and_int_D(z,t)
+    H_inv, L = self.get_transition_params(z,t)
     
     x,v = z.chunk(2,dim=1)
     new_x = H_inv[...,0,0] * x + H_inv[...,0,1] * v
