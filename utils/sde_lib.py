@@ -316,79 +316,7 @@ class MomentumSchrodingerBridge(SchrodingerBridge):
     return zt,trajectories,policies
 
 
-class GeneralLinearizedSB(SchrodingerBridge, LinearSDE):
-  """ 
-    Note that this is not a general SB, it is implemented so that after optimized
-    the linear drift transports to a standard normal
-    To instantiate a class you just have to implement how the D matrix works
-  """
-  def __init__(self,T=1.,delta=1e-3, beta_max=10, forward_model=None, backward_model=None, is_augmented=False):
-    """ Here the backward model is a standard backwards score
-        The forward model is such that it receives t of shape [bs,1] and outputs a matrix [bs, d,d]
-        The dimension is infered from the forward model, so if it doesn't behave in this way it won't work
-        We internally assign the forward model to be the multiplication against this matrix
-    """
-    SchrodingerBridge.__init__(self,T,delta,beta_max,is_augmented=is_augmented)
-    LinearSDE.__init__(self,backward_score=backward_model, is_augmented=is_augmented)
-
-    self.At = forward_model
-
-  @property
-  def forward_score(self):
-    return lambda x,t,cond=None : batch_matrix_product(self.At(t), x)
-  
-  @forward_score.setter
-  def forward_score(self,forward_model):
-    self.At = forward_model
-
-  @property
-  def T(self):
-    return self._T
-  
-  def beta(self, t):
-    return self.beta_max
-  
-  def beta_int(self, t):
-    return self.beta_max * t
-  
-  # def int_beta_ds(self, t):
-  #   # Curently using Simpsons Method
-  #   num_pts = 1000
-  #   t_shape = t.view(-1,1,1).expand(-1,num_pts,-1)
-  #   dt = t/num_pts
-  #   time_pts = torch.arange(num_pts,device=t.device).unsqueeze(-1) * t_shape/num_pts
-  #   multipliers = torch.ones(num_pts, device=t.device)
-  #   multipliers[1:-1:2] = 4
-  #   multipliers[2:-1:2] = 2
-  #   multipliers = multipliers.view(1,-1,1,1)
-  #   Ats = self.D(time_pts.view(-1,1))
-  #   Ats = Ats.view(-1,num_pts, Ats.shape[-1], Ats.shape[-1])
-  #   betas = self.beta(time_pts)#.unsqueeze(-1)
-  #   return torch.sum(betas * Ats * multipliers,dim=1) * dt.unsqueeze(-1)/3
-
-  # def compute_variance(self, t):
-  #   int_mat = self.int_beta_ds(t)
-  #   dim = int_mat.shape[-1]
-  #   ch_power = torch.zeros((t.shape[0], 2 * dim, 2 * dim),device=int_mat.device)
-  #   ch_power[:,:dim, :dim] = -.5 * int_mat
-  #   ch_power[:,dim:, dim:] = .5 * int_mat.mH
-  #   if self.is_augmented:
-  #     k = dim//2
-  #     ch_power[:, k:dim, dim+k:] = self.gamma * self.beta_int(t).view(-1,1,1) * torch.eye(k,device=int_mat.device).unsqueeze(0).expand(t.shape[0],-1,-1)
-  #   else:
-  #     ch_power[:, :dim, dim:] = self.beta_int(t).view(-1,1,1) * torch.eye(dim,device=int_mat.device).unsqueeze(0).expand(t.shape[0],-1,-1)
-  #   ch_pair = torch.linalg.matrix_exp(ch_power)
-  #   C = ch_pair[:, :dim, dim:]
-  #   H_inv = ch_pair[:, :dim, :dim].mH
-  #   cov = C @ H_inv
-  #   L = torch.linalg.cholesky(cov)
-  #   return cov, L, H_inv.mH # Cov, L, exp([-.5 bD]_t)
-  
-  def prior_sampling(self, shape, device):
-    return torch.randn(*shape, dtype=torch.float, device=device)
-
-
-class LinearSchrodingerBridge(GeneralLinearizedSB):
+class LinearSchrodingerBridge(SchrodingerBridge, LinearSDE):
   """ 
     Note that this is not a general SB, it is implemented so that after optimized
     the linear drift transports to a standard normal
@@ -399,7 +327,9 @@ class LinearSchrodingerBridge(GeneralLinearizedSB):
         The dimension is infered from the forward model, so if it doesn't behave in this way it won't work
         We internally assign the forward model to be the multiplication against this matrix
     """
-    GeneralLinearizedSB.__init__(self, T, delta, beta_max, forward_model, backward_model, is_augmented=False)
+    SchrodingerBridge.__init__(self,T,delta,beta_max,is_augmented=False)
+    LinearSDE.__init__(self,backward_score=backward_model, is_augmented=False)
+    self.forward_score = forward_model
 
   @property
   def forward_score(self):
@@ -433,7 +363,7 @@ class LinearSchrodingerBridge(GeneralLinearizedSB):
     return scale * x, (1-scale**2).sqrt()
   
 
-class LinearMomentumSchrodingerBridge(MomentumSchrodingerBridge, GeneralLinearizedSB):
+class LinearMomentumSchrodingerBridge(MomentumSchrodingerBridge, LinearSDE):
   """ 
     Note that this is not a general SB, it is implemented so that after optimized
     the linear drift transports to a standard normal
@@ -445,7 +375,8 @@ class LinearMomentumSchrodingerBridge(MomentumSchrodingerBridge, GeneralLineariz
         We internally assign the forward model to be the multiplication against this matrix
     """
     MomentumSchrodingerBridge.__init__(self,T,delta,gamma,beta_max,forward_model,backward_model)
-    GeneralLinearizedSB.__init__(self,T,delta,beta_max,forward_model,backward_model,is_augmented=True)
+    LinearSDE.__init__(self,backward_score=backward_model, is_augmented=True)
+    self.forward_score = forward_model
 
   @property
   def forward_score(self):

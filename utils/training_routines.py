@@ -43,7 +43,7 @@ class AlternateTrainingRoutine():
 
 
 class VariationalDiffusionTrainingRoutine():
-    def __init__(self,sb : SDEs.GeneralLinearizedSB, sampling_sb : SDEs.GeneralLinearizedSB,
+    def __init__(self,sb : SDEs.SDE, sampling_sb : SDEs.SDE,
                  model_forward, model_backward, 
                  num_iters_dsm_warm_up, num_iters_middle, num_iters_dsm_cool_down,
                  num_iters_forward, num_iters_backward, n_time_pts, device):
@@ -133,7 +133,7 @@ class VariationalDiffusionTrainingRoutine():
             return losses.alternate_sb_loss(self.sb,self.trajectories,self.frozen_policy,self.time_pts,optimize_forward=True)
 
 class VariationalDiffusionTrainingRoutineEpoch():
-    def __init__(self,sb : SDEs.GeneralLinearizedSB, sampling_sb : SDEs.GeneralLinearizedSB,
+    def __init__(self,sb : SDEs.SDE, sampling_sb : SDEs.SDE,
                  model_forward, model_backward, 
                  num_epochs_dsm_warm_up, num_epochs_middle, num_epochs_dsm_cool_down,
                  num_iters_forward, num_iters_backward, n_time_pts, device):

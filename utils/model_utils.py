@@ -2,7 +2,7 @@ import torch.nn as nn
 import torch
 
 
-from utils.sde_lib import SDE, VP, CLD, GeneralLinearizedSB
+from utils.sde_lib import SDE, VP, CLD
 from utils.models import MLP, MatrixTimeEmbedding
 from utils.misc import batch_matrix_product
 from utils.unet import ScoreNet
@@ -31,7 +31,7 @@ class PrecondCLD(nn.Module):
         return -vt/(lvv**2+lxv).view(-1,*ones) - self.net(zt,t,cond)/lvv.view(-1,*ones)
 
 class PrecondGeneral(nn.Module):
-    def __init__(self, net, sde : GeneralLinearizedSB) -> None:
+    def __init__(self, net, sde : SDE) -> None:
         super().__init__()
         self.net = net
         self.sde = sde
@@ -64,6 +64,4 @@ def get_preconditioned_model(model, sde):
         return PrecondVP(model,sde)
     elif isinstance(sde,CLD):
         return PrecondCLD(model, sde)
-    elif isinstance(sde,GeneralLinearizedSB):
-        return model
-        # return PrecondGeneral(model, sde)
+    return model
