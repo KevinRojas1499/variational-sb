@@ -2,6 +2,7 @@ import torch
 import click
 import wandb
 import itertools
+from itertools import chain
 import os
 import matplotlib.pyplot as plt
 from torch.optim import Adam
@@ -12,7 +13,7 @@ from tqdm import tqdm
 from utils.misc import dotdict
 
 import utils.losses as losses
-from utils.training_routines import VariationalDiffusionTrainingRoutineEpoch, VariationalDiffusionTrainingRoutine
+from utils.training_routines import  VariationalDiffusionTrainingRoutine
 from utils.sde_lib import SDE
 from utils.model_utils import get_model
 from utils.model_utils import get_preconditioned_model
@@ -78,7 +79,7 @@ def init_wandb(num_samples):
 @click.option('--ema_beta', type=float, default=.99)
 @click.option('--clip_grads', is_flag=True, default=False)
 @click.option('--batch_size', type=int, default=64)
-@click.option('--num_epochs',type=int,default=30000)
+@click.option('--num_iters',type=int,default=30000)
 @click.option('--dir',type=str)
 @click.option('--load_from_ckpt', type=str)
 def train(**opts):
@@ -115,23 +116,23 @@ def train(**opts):
     
     data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=4)
     data_loader = itertools.cycle(data_loader)
-    optimizer = Adam(model_backward.parameters(), lr=opts.lr)
+    optimizer = Adam(chain(model_forward.parameters(), model_backward.parameters()), lr=opts.lr)
     
     loss_fn = losses.get_loss(opts.sde, False) 
     if opts.loss_routine == 'variational':
         routine = VariationalDiffusionTrainingRoutine(sde,sampling_sde,model_forward,model_backward,
-                                                      opts.dsm_warm_up,opts.num_epochs-opts.dsm_warm_up - opts.dsm_cool_down, opts.dsm_cool_down,
+                                                      opts.dsm_warm_up,opts.num_iters-opts.dsm_warm_up - opts.dsm_cool_down, opts.dsm_cool_down,
                                                       opts.forward_opt_steps, opts.backward_opt_steps,100,device)
-    tqdm_epoch = tqdm(range(opts.num_epochs))
+    tqdm_epoch = tqdm(range(opts.num_iters))
     for i in tqdm_epoch:
         x, y = next(data_loader)
         x = x.to(device)  
+        optimizer.zero_grad()
         
         if opts.loss_routine == 'variational':
             loss = routine.training_iteration(i, x)
         else:
             loss = loss_fn(sde, x)
-        optimizer.zero_grad()
         loss.backward()    
         optimizer.step()
         wandb.log({'loss' : loss.item()})

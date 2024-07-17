@@ -1,62 +1,48 @@
 import torch
+import itertools
 import abc
 import numpy as np
-from torch.distributions.multivariate_normal import MultivariateNormal
-from torch.distributions.mixture_same_family import MixtureSameFamily
-from torch.distributions.categorical import Categorical
+import torchvision.transforms as transforms
+from torchvision.datasets import MNIST
+from torch.utils.data import DataLoader
 
-from utils.sde_lib import SDE
+class MyDataset(abc.ABC):
+    """Implementes a basic iterable for toy datasets"""
+    def __init__(self):
+        super(MyDataset, self).__init__()
 
-
-class Dataset(abc.ABC):
-    def __init__(self, dim) -> None:
-        super().__init__()
-        self.dim = dim
+    @property
+    @abc.abstractmethod
+    def out_shape(self):
+        pass
     
     @abc.abstractmethod
-    def sample(self,num_samples):
-        pass
+    def __iter__(self, index):
+        return 
 
-class GMM(Dataset):
-    def __init__(self,weights, means, covariances, sde : SDE = None) -> None:
-        super().__init__(means[0].shape[0])
-        self.means = means
-        self.covariances = covariances
-        self.weights = weights
-        self.n = len(weights)
-        gaussians = MultivariateNormal(means,covariances)
-        cat = Categorical(weights)
-        self.dist = MixtureSameFamily(cat, gaussians)
-        self.sde = sde
+    @abc.abstractmethod
+    def __next__(self):
+        return 
     
-    def sample(self,num_samples):
-        return self.dist.sample((num_samples,))
+
     
-    
-    
-    def score(self, x, t):
-        assert self.sde is not None, "Please specify SDE to dataset"
-        with torch.enable_grad():
-            x_aux = x.clone().requires_grad_(True)
-            # We assume only one t
-            means_t, var = self.sde.marginal_prob(self.means, t[0])
-            var_t = (1-var) * self.covariances + torch.eye(self.dim,device=x_aux.device).unsqueeze(0) * var
-            gaussians = MultivariateNormal(means_t,var_t)
-            cat = Categorical(self.weights)
-            dist_t = MixtureSameFamily(cat, gaussians)
-            log_prob = dist_t.log_prob(x_aux)
-            grad = torch.autograd.grad(log_prob.sum(),x_aux,create_graph=True)[0]
-            return  grad
-       
-class CheckerBoard(Dataset):
-    def __init__(self, x_scalar=1.0, y_scalar=1.0):
-        super().__init__(2)
+
+class CheckerBoard(MyDataset):
+    def __init__(self, batch_size, x_scalar=1.0, y_scalar=1.0):
+        super(CheckerBoard, self).__init__()
         self.x_scalar = x_scalar
         self.y_scalar = y_scalar
+        self.batch_size = batch_size
+    
+    @property
+    def out_shape(self):
+        return [2]
+    
+    def __iter__(self):
+        return self
 
-
-    def sample(self, num_samples):
-        n = num_samples
+    def __next__(self, n_samples=None):
+        n = self.batch_size if n_samples is None else n_samples
         n_points = 3*n
         n_classes = 2
         freq = 5
@@ -78,16 +64,22 @@ class CheckerBoard(Dataset):
         sample[:, 1] = self.y_scalar * sample[:, 1]
         return sample
 
-
-class Spiral(Dataset):
-    def __init__(self, x_scalar=1, y_scalar=1):
-        super().__init__(2)
+class Spiral(MyDataset):
+    def __init__(self, batch_size, x_scalar=1.0, y_scalar=1.0):
+        super(Spiral, self).__init__()
         self.x_scalar = x_scalar
         self.y_scalar = y_scalar
-        
+        self.batch_size = batch_size
+    
+    @property
+    def out_shape(self):
+        return [2]
+    
+    def __iter__(self):
+        return self
 
-    def sample(self, num_samples):
-        n = num_samples
+    def __next__(self, n_samples=None):
+        n = self.batch_size if n_samples is None else n_samples
         theta = np.sqrt(np.random.rand(n))*3*np.pi-0.5*np.pi # np.linspace(0,2*pi,100)
 
         r_a = theta + np.pi
@@ -97,38 +89,16 @@ class Spiral(Dataset):
         samples = samples[:,0:2]
         samples[:, 0] = self.x_scalar * samples[:, 0]
         samples[:, 1] = self.y_scalar * samples[:, 1]
-        return torch.Tensor(samples)       
-    
-
+        return torch.Tensor(samples)     
         
 def get_dataset(opts):
-    if opts.dataset == 'gmm':
-         return get_gmm(2, None, device='cuda')
-    elif opts.dataset == 'spiral':
-        return Spiral(x_scalar=1., y_scalar=1.)
+    if  opts.dataset == 'spiral':
+        return Spiral(opts.batch_size, x_scalar=1., y_scalar=1.)
     elif opts.dataset == 'checkerboard':
-        return CheckerBoard()
+        return CheckerBoard(opts.batch_size)
+    elif opts.dataset == 'mnist':
+        dataset = MNIST('.', train=True, transform=transforms.Compose([transforms.ToTensor(),transforms.Resize((28,28))]), download=True)
+        data_loader = DataLoader(dataset, batch_size=opts.batch_size, shuffle=True, num_workers=4)
+        return itertools.cycle(data_loader)
     else:
         print('Dataset is not implemented')
-        
-def get_gmm(dim, sde, device):
-    if dim == 2:
-        return GMM(
-            torch.tensor([.33,.33, .33],device=device),
-            torch.tensor([[-5.,-5.],[5.,5.],[-5,8.]],device=device),
-            torch.tensor([[[1., -.3],[-.3,1.]], [[1., .5],[.5,1.]],[[1., 0],[0,1.]]],device=device),
-            sde
-        )
-        # return GMM(
-        #     torch.tensor([.5,.5],device=device),
-        #     torch.tensor([[-5.,-5.],[5.,5.]],device=device),
-        #     torch.tensor([[[1., 0],[0,1.]], [[1., 0],[0,1.]]],device=device),
-        #     sde
-        # )
-    elif dim == 1:
-       return GMM(
-            torch.tensor([.2,.8],device=device),
-            torch.tensor([[-5],[5.]],device=device),
-            torch.tensor([[[1.]], [[1]]],device=device),
-            sde
-        ) 

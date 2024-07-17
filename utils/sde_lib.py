@@ -31,43 +31,45 @@ class SDE(abc.ABC):
   def probability_flow_drift(self, xt, t,cond=None):
     pass
   
+  @torch.no_grad
   def sample(self, shape, device, backward=True, 
              in_cond=None, prob_flow=True, 
              cond=None, n_time_pts=100, return_traj=False):
-    with torch.no_grad():
-      xt = self.prior_sampling(shape,device) if backward else in_cond
-      assert xt is not None
-      # step_indices = torch.arange(n_time_pts, device=device)
-      # rho = 7
-      # time_pts = (self.T ** (1 / rho) + step_indices / (n_time_pts - 1) * (self.delta ** (1 / rho) - self.T ** (1 / rho))) ** rho
-      # time_pts = torch.cat([time_pts, torch.zeros_like(time_pts[:1])]) # t_N = 0
-      # time_pts = time_pts.flip(dims=(0,))
+    xt = self.prior_sampling(shape,device) if backward else in_cond
+    assert xt is not None
+    # step_indices = torch.arange(n_time_pts, device=device)
+    # rho = 7
+    # time_pts = (self.T ** (1 / rho) + step_indices / (n_time_pts - 1) * (self.delta ** (1 / rho) - self.T ** (1 / rho))) ** rho
+    # time_pts = torch.cat([time_pts, torch.zeros_like(time_pts[:1])]) # t_N = 0
+    # time_pts = time_pts.flip(dims=(0,))
 
-      time_pts = torch.linspace(0. if backward else self.delta, self.T, n_time_pts, device=device)
+    time_pts = torch.linspace(0. if backward else self.delta, self.T, n_time_pts, device=device)
+    if return_traj:
+      trajectories = torch.empty((xt.shape[0], n_time_pts, *xt.shape[1:]),device=xt.device) 
+    for i, t in enumerate(time_pts):
       if return_traj:
-        trajectories = torch.empty((xt.shape[0], n_time_pts, *xt.shape[1:]),device=xt.device) 
-      for i, t in enumerate(time_pts):
-        if return_traj:
-          trajectories[:,i] = xt
-        if i == n_time_pts - 1:
-          break
-        dt = time_pts[i+1] - t 
-        dt = -dt if backward else dt 
-        t_shape = self.T - t if backward else t
-        t_shape = t_shape.unsqueeze(-1).expand(xt.shape[0])
-        if prob_flow:
-          drift = self.probability_flow_drift(xt,t_shape, cond)
-          if backward and i+1 != n_time_pts - 1:
-            xt_hat = xt + drift * dt
-            t_hat = self.T - time_pts[i+1] if backward else time_pts[i+1]
-            t_hat = t_hat.unsqueeze(-1).expand(xt.shape[0])
-            xt = xt + .5 * dt * (drift + self.probability_flow_drift(xt_hat,t_hat,cond))
-          else:
-            xt = xt + drift * dt
+        trajectories[:,i] = xt
+      if i == n_time_pts - 1:
+        break
+      dt = time_pts[i+1] - t 
+      dt = -dt if backward else dt 
+      t_shape = self.T - t if backward else t
+      t_shape = t_shape.unsqueeze(-1).expand(xt.shape[0])
+      if prob_flow:
+        drift = self.probability_flow_drift(xt,t_shape, cond)
+        if backward and i+1 != n_time_pts - 1:
+          xt_hat = xt + drift * dt
+          t_hat = self.T - time_pts[i+1] if backward else time_pts[i+1]
+          t_hat = t_hat.unsqueeze(-1).expand(xt.shape[0])
+          xt = xt + .5 * dt * (drift + self.probability_flow_drift(xt_hat,t_hat,cond))
         else:
-          drift = self.drift(xt,t_shape, forward=(not backward),cond=cond)
-          xt = xt + drift * dt + torch.randn_like(xt) * self.diffusion(xt,t) * dt.abs().sqrt()
-      return xt, (trajectories if return_traj else None)
+          xt = xt + drift * dt
+      else:
+        drift = self.drift(xt,t_shape, forward=(not backward),cond=cond)
+        xt = xt + drift * dt + torch.randn_like(xt) * self.diffusion(xt,t) * dt.abs().sqrt()
+
+    xt = xt.chunk(2,dim=1)[0] if self.is_augmented else xt
+    return xt, (trajectories if return_traj else None)
 class LinearSDE(SDE):
   
   def __init__(self, backward_score, is_augmented):

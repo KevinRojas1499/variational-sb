@@ -43,8 +43,13 @@ class MatrixTimeEmbedding(nn.Module):
         )
         self.out = nn.Linear(128, self.real_dim)
         
-        torch.nn.init.zeros_(self.out.weight)
-        torch.nn.init.zeros_(self.out.bias)
+        
+        self.apply(self.zero_init)
+        
+    def zero_init(self, m):
+        if isinstance(m, torch.nn.Linear):
+            torch.nn.init.zeros_(m.weight)
+            torch.nn.init.zeros_(m.bias)
         
     def forward(self,t):
         t = t.flatten().unsqueeze(-1)
