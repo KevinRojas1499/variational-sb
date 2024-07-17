@@ -2,6 +2,7 @@ import os
 import torch
 import click
 import wandb
+import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 from tqdm import tqdm
 from itertools import chain
@@ -24,6 +25,20 @@ def init_wandb(opts):
         # # track hyperparameters and run metadata
         # config=config
     )
+
+def plot_32_mnist(x_t,file_name='mnist_samples.jpeg'):
+    n_rows, n_cols = 4,8
+    fig, axs = plt.subplots(n_rows,n_cols)
+    idx = 0
+    for i in range(n_rows):
+        for j in range(n_cols):
+            im = x_t[idx].permute(1,2,0)
+            axs[i][j].axis('off')
+            axs[i][j].imshow(im.cpu().numpy(),vmin=0,vmax=1,cmap='gray')
+            idx+=1
+    plt.tight_layout()
+    fig.savefig(file_name,bbox_inches='tight')
+    # plt.close(fig) # TODO : Why is this not working?
 
 def is_toy_dataset(name):
     return name in ['spiral','checkerboard']
@@ -49,7 +64,7 @@ def default_log_rate(ctx, param, value):
     sde = ctx.params.get('sde')
     if value is not None: 
         return value
-    return 500 if is_sb_sde(sde) else 2000
+    return 2000 if is_sb_sde(sde) else 2000
 
 @click.command()
 @click.option('--dataset',type=click.Choice(['mnist','spiral','checkerboard']))
@@ -98,17 +113,16 @@ def training(**opts):
         model_forward , ema_forward  = get_model(opts.model_forward,sde,device,network_opts=network_opts)
         sde.forward_score = model_forward
         sampling_sde.forward_score = ema_forward
-        
+    
+    start_iter = 0
     if opts.load_from_ckpt is not None:
-        model_backward = torch.load(os.path.join(opts.load_from_ckpt,'backward.pt'))
-        ema_backward = torch.load(os.path.join(opts.load_from_ckpt,'backward_ema.pt'))
-        sde.backward_score = model_backward
-        sampling_sde.backward_score = ema_backward
+        start_iter = int(opts.load_from_ckpt.split('_')[-1])
+        print(f'Loading checkpoint at {opts.load_from_ckpt}, now starting at {start_iter}')
+        model_backward.load_state_dict(torch.load(os.path.join(opts.load_from_ckpt,'backward.pt')))
+        ema_backward.load_state_dict(torch.load(os.path.join(opts.load_from_ckpt,'backward_ema.pt')))
         if is_sb:
-            model_forward = torch.load(os.path.join(opts.load_from_ckpt,'forward.pt'))
-            ema_forward = torch.load(os.path.join(opts.load_from_ckpt,'forward_ema.pt'))
-            sde.forward_score = model_forward
-            sampling_sde.forward_score = ema_forward
+            model_forward.load_state_dict(torch.load(os.path.join(opts.load_from_ckpt,'forward.pt')))
+            ema_forward.load_state_dict(torch.load(os.path.join(opts.load_from_ckpt,'forward_ema.pt')))
             
     if opts.precondition:
         sde.backward_score = get_preconditioned_model(model_backward, sde)
@@ -129,7 +143,7 @@ def training(**opts):
 
     init_wandb(opts)
     
-    pbar = tqdm(range(opts.num_iters))
+    pbar = tqdm(range(start_iter, start_iter+opts.num_iters))
     for i in pbar:
         if is_toy:
             data = next(dataset)
@@ -146,9 +160,9 @@ def training(**opts):
             loss = loss_fn(sde,data)            
         loss.backward()
         
-        # if opts.clip_grads:
-        #     torch.nn.utils.clip_grad_norm_(model_forward.parameters(),1)
-        #     torch.nn.utils.clip_grad_norm_(model_backward.parameters(), 1)
+        if opts.clip_grads:
+            torch.nn.utils.clip_grad_norm_(model_forward.parameters(),1)
+            torch.nn.utils.clip_grad_norm_(model_backward.parameters(), 1)
         
         opt.step()
         
@@ -164,27 +178,26 @@ def training(**opts):
         })
         # Evaluate sample accuracy
         if (i+1)%log_sample_quality == 0 or i+1 == num_iters:
+            # Save Checkpoints
+            path = os.path.join(opts.dir, f'itr_{i+1}/')
+            os.makedirs(path,exist_ok=True) # Still wondering it this is the best idea
+            torch.save(model_backward.state_dict(),os.path.join(path, 'backward.pt'))
+            torch.save(ema_backward.state_dict(),os.path.join(path, 'backward_ema.pt'))
             
+            if is_sb:
+                torch.save(model_forward.state_dict(),os.path.join(path, 'forward.pt'))
+                torch.save(ema_forward.state_dict(),os.path.join(path, 'forward_ema.pt'))
+
             sampling_shape = (1000 if is_toy else 32, *network_opts.out_shape)
             new_data, _ = sde.sample(sampling_shape, device)
             new_data_ema, _  = sampling_sde.sample(sampling_shape, device)
-            
             if is_toy:
                 relevant_log_info = toy_data_figs([data, new_data, new_data_ema], ['true','normal', 'ema'])
                 wandb.log(relevant_log_info)
             else:
-                relevant_log_info = plot_32_mnist(new_data,os.path.join(opts.dir,f'itr_{i+1}.png'))
+                plot_32_mnist(new_data,os.path.join(opts.dir,f'itr_{i+1}.png'))
             
-            # Save Checkpoints
-            path = os.path.join(opts.dir, f'itr_{i+1}/')
-            os.makedirs(path,exist_ok=True) # Still wondering it this is the best idea
-            
-            torch.save(model_backward,os.path.join(path, 'backward.pt'))
-            torch.save(ema_backward,os.path.join(path, 'backward_ema.pt'))
-            if is_sb:
-                torch.save(model_forward,os.path.join(path, 'forward.pt'))
-                torch.save(ema_forward,os.path.join(path, 'forward_ema.pt'))
-                
+    wandb.finish()
 
 def toy_data_figs(data_array, names):
     # We assume that the ground truth is in the zeroth position
@@ -203,19 +216,6 @@ def toy_data_figs(data_array, names):
     stats_and_figs['samples'] = fig  
     return stats_and_figs
 
-def plot_32_mnist(x_t,file_name='mnist_samples.jpeg'):
-    import matplotlib.pyplot as plt
-    n_rows, n_cols = 4,8
-    fig, axs = plt.subplots(n_rows,n_cols)
-    idx = 0
-    for i in range(n_rows):
-        for j in range(n_cols):
-            im = x_t[idx].permute(1,2,0)
-            axs[i][j].axis('off')
-            axs[i][j].imshow(im.cpu().numpy(),vmin=0,vmax=1,cmap='gray')
-            idx+=1
-    fig.savefig(file_name,bbox_inches='tight')
-    plt.close(fig)
     
 if __name__ == '__main__':
     training()

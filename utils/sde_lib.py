@@ -31,7 +31,7 @@ class SDE(abc.ABC):
   def probability_flow_drift(self, xt, t,cond=None):
     pass
   
-  @torch.no_grad
+  @torch.no_grad()
   def sample(self, shape, device, backward=True, 
              in_cond=None, prob_flow=True, 
              cond=None, n_time_pts=100, return_traj=False):
