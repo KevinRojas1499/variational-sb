@@ -43,7 +43,7 @@ class AlternateTrainingRoutine():
 
 
 class VariationalDiffusionTrainingRoutine():
-    def __init__(self,sb : SDEs.SDE, sampling_sb : SDEs.SDE,
+    def __init__(self,sb : SDEs.LinearSchrodingerBridge, sampling_sb : SDEs.LinearSchrodingerBridge,
                  model_forward, model_backward, 
                  num_iters_dsm_warm_up, num_iters_middle, num_iters_dsm_cool_down,
                  num_iters_forward, num_iters_backward, n_time_pts, device):
@@ -86,7 +86,7 @@ class VariationalDiffusionTrainingRoutine():
         else:
             return 'backward'
 
-
+    @torch.no_grad()
     def refresh_forward(self, data):
         if self.sb.is_augmented:
             data = losses.augment_data(data)
@@ -97,8 +97,9 @@ class VariationalDiffusionTrainingRoutine():
         
         self.freeze_models(optimizing_forward=True)    
     
+    @torch.no_grad()
     def refresh_backward(self, data):
-        self.loss_times = torch.linspace(self.sb.delta, self.sb.T, 1500, device=data.device)
+        self.loss_times = torch.linspace(self.sb.delta, self.sb.T, 500, device=data.device)
         ones = [1] * (len(data.shape)-1)
         shaped_t = self.loss_times.reshape(-1,*ones)
         scale, Ls = self.sb.get_transition_params(torch.empty((self.loss_times.shape[0], *data.shape[1:]),device=data.device), shaped_t)

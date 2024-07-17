@@ -1,6 +1,7 @@
 import torch
 import click
 import wandb
+import itertools
 import os
 import matplotlib.pyplot as plt
 from torch.optim import Adam
@@ -11,7 +12,7 @@ from tqdm import tqdm
 from utils.misc import dotdict
 
 import utils.losses as losses
-from utils.training_routines import VariationalDiffusionTrainingRoutineEpoch
+from utils.training_routines import VariationalDiffusionTrainingRoutineEpoch, VariationalDiffusionTrainingRoutine
 from utils.sde_lib import SDE
 from utils.model_utils import get_model
 from utils.model_utils import get_preconditioned_model
@@ -62,22 +63,22 @@ def init_wandb(num_samples):
 
 @click.command()
 @click.option('--dataset',type=click.Choice(['mnist']),default='mnist')
-@click.option('--model_forward',type=click.Choice(['diagonal','none']), default='none')
+@click.option('--model_forward',type=click.Choice(['linear','none']), default='none')
 @click.option('--model_backward',type=click.Choice(['unet']), default='unet')
 @click.option('--precondition', is_flag=True, default=True)
 @click.option('--sde',type=click.Choice(['vp','cld','sb','edm', 'linear-sb','momentum-sb','linear-momentum-sb']), default='vp')
 @click.option('--loss_routine', type=click.Choice(['none','variational']),default='none')
-@click.option('--dsm_warm_up', type=int, default=5, help='Number of epochs to perform warm up in')
-@click.option('--dsm_cool_down', type=int, default=10, help='Number of epochs for cool down')
-@click.option('--forward_opt_steps', type=int, default=100, help='Number of forward opt steps in alternate training scheme')
-@click.option('--backward_opt_steps', type=int, default=100, help='Number of backward opt steps in alternate training scheme')
+@click.option('--dsm_warm_up', type=int, default=2000, help='Number of epochs to perform warm up in')
+@click.option('--dsm_cool_down', type=int, default=5000, help='Number of epochs for cool down')
+@click.option('--forward_opt_steps', type=int, default=5, help='Number of forward opt steps in alternate training scheme')
+@click.option('--backward_opt_steps', type=int, default=495, help='Number of backward opt steps in alternate training scheme')
 # Training Options
 @click.option('--optimizer',type=click.Choice(['adam','adamw']), default='adam')
 @click.option('--lr', type=float, default=3e-4)
 @click.option('--ema_beta', type=float, default=.99)
 @click.option('--clip_grads', is_flag=True, default=False)
 @click.option('--batch_size', type=int, default=64)
-@click.option('--num_epochs',type=int,default=50)
+@click.option('--num_epochs',type=int,default=30000)
 @click.option('--dir',type=str)
 @click.option('--load_from_ckpt', type=str)
 def train(**opts):
@@ -96,13 +97,13 @@ def train(**opts):
     
     if is_sb:
         network_opts = dotdict({
-            'in_dim'  : 2 * 28 * 28 if sde.is_augmented else 28 * 28,
-            'out_dim' : 28 * 28 
+            'out_shape' : [1, 28, 28] 
         })
         model_forward, ema_forward = get_model(opts.model_forward, sde, device, network_opts)
         sde.forward_score = model_forward
         sampling_sde.forward_score = ema_forward
-        
+    
+    # num_params_forward = 0
     num_params = sum(p.numel() for p in model_backward.parameters() if p.requires_grad)
     num_params_forward = sum(p.numel() for p in model_forward.parameters() if p.requires_grad)
 
@@ -113,50 +114,43 @@ def train(**opts):
     init_wandb(num_samples=batch_size)
     
     data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=4)
+    data_loader = itertools.cycle(data_loader)
     optimizer = Adam(model_backward.parameters(), lr=opts.lr)
     
     loss_fn = losses.get_loss(opts.sde, False) 
     if opts.loss_routine == 'variational':
-        routine = VariationalDiffusionTrainingRoutineEpoch(sde,sampling_sde,model_forward,model_backward,
+        routine = VariationalDiffusionTrainingRoutine(sde,sampling_sde,model_forward,model_backward,
                                                       opts.dsm_warm_up,opts.num_epochs-opts.dsm_warm_up - opts.dsm_cool_down, opts.dsm_cool_down,
                                                       opts.forward_opt_steps, opts.backward_opt_steps,100,device)
     tqdm_epoch = tqdm(range(opts.num_epochs))
     for i in tqdm_epoch:
-        avg_loss = 0.
-        num_items = 0
-        k = 0
-        for x, y in data_loader: # Load data
-            x = x.to(device)  
-            
-            if opts.loss_routine == 'variational':
-                loss = routine.training_iteration(i,k, x)
-            else:
-                loss = loss_fn(sde, x)
-            optimizer.zero_grad()
-            loss.backward()    
-            optimizer.step()
-            avg_loss += loss.item() * x.shape[0]
-            num_items += x.shape[0]
-            # Print the averaged training loss so far.
-            tqdm_epoch.set_description('Average Loss: {:5f}'.format(avg_loss / num_items))
-            wandb.log({'loss' : loss.item()})
-            
-            # Update EMA
-            update_ema(model_backward, ema_backward, opts.ema_beta)
-            if is_sb:
-                update_ema(model_forward,  ema_forward, opts.ema_beta)
-            if opts.loss_routine == 'variational':
-                copy_ema_to_model(model_forward, ema_forward)
-            k+=1
-            
-        # Update the checkpoint after each epoch of training.
-        path = os.path.join(opts.dir, f'itr_{i+1}/')
-        os.makedirs(path,exist_ok=True) # Still wondering it this is the best idea
-            
-        torch.save(model_backward.state_dict(),os.path.join(path, 'backward.pt'))
+        x, y = next(data_loader)
+        x = x.to(device)  
         
-        create_sample_logs(sde,file_name=os.path.join(path,f'epoch {i}'))
+        if opts.loss_routine == 'variational':
+            loss = routine.training_iteration(i, x)
+        else:
+            loss = loss_fn(sde, x)
+        optimizer.zero_grad()
+        loss.backward()    
+        optimizer.step()
+        wandb.log({'loss' : loss.item()})
         
+        # Update EMA
+        update_ema(model_backward, ema_backward, opts.ema_beta)
+        if is_sb:
+            update_ema(model_forward,  ema_forward, opts.ema_beta)
+        if opts.loss_routine == 'variational':
+            copy_ema_to_model(model_forward, ema_forward)
+        
+    # Update the checkpoint after each epoch of training.
+    path = os.path.join(opts.dir, f'itr_{i+1}/')
+    os.makedirs(path,exist_ok=True) # Still wondering it this is the best idea
+        
+    torch.save(model_backward.state_dict(),os.path.join(path, 'backward.pt'))
+    
+    create_sample_logs(sde,file_name=os.path.join(path,f'epoch {i}'))
+    
     wandb.finish()
     
 if __name__ == '__main__':

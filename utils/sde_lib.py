@@ -216,7 +216,7 @@ class SchrodingerBridge(SDE):
     for i, t in enumerate(time_pts):
       if not forward:
         t = self.T - t
-      t_shape = t.unsqueeze(-1).expand(batch_size,1)
+      t_shape = t.expand(batch_size)
       
       bt = self.beta(t)
       save_idx = i if forward else -(i+1)
@@ -347,10 +347,11 @@ class LinearSchrodingerBridge(SchrodingerBridge, LinearSDE):
     multipliers = torch.ones(num_pts, device=t.device)
     multipliers[1:-1:2] = 4
     multipliers[2:-1:2] = 2
-    multipliers = multipliers.view(1,-1,1)
-    Ats = self.At(time_pts.view(-1,1)) * self.beta(time_pts.view(-1,1))
+    At = self.At(time_pts.view(-1,1))
+    Ats = At * self.beta(time_pts.view(-1,1))
     Ats = Ats.view(-1,num_pts, *Ats.shape[1:])
-    res = torch.sum(Ats * multipliers,dim=1) * dt.view(-1,1)/3
+    multipliers = multipliers.view(1,-1,*([1] * (len(Ats.shape)-2)))
+    res = torch.sum(Ats * multipliers,dim=1) * dt.view(-1,*([1] * (len(Ats.shape)-2)))/3
     return res
 
   def get_transition_params(self, x, t):

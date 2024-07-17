@@ -35,7 +35,7 @@ def linear_sb_loss_given_params(sde : SDEs.LinearSDE, data, times, scale, std, c
         perturbed_data = mean + torch.cat((new_noise_x, new_noise_v),dim=1)
         flatten_error = ((std[...,1,1]  * sde.backward_score(perturbed_data,times,cond) + noise_v)**2).view(data.shape[0],-1)
     else:
-        perturbed_data = mean + std * noise
+        perturbed_data = scale * data + std * noise
         flatten_error = ((std * sde.backward_score(perturbed_data,times,cond) + noise)**2).view(data.shape[0],-1)
     
     return torch.mean(torch.sum(flatten_error,dim=1))
@@ -114,13 +114,13 @@ def alternate_sb_loss(sde : SDEs.SchrodingerBridge,trajectories, frozen_policy, 
     # We also assume that f has constant divergence
     # if optimize forward is true we will optimize the forward score, if not we will optimize the backward
     frozen_policy = frozen_policy.detach()
-    batch_size, d = trajectories.shape[0], trajectories.shape[-1]
+    batch_size, data_shape = trajectories.shape[0], trajectories.shape[2:]
     dt = time_pts[1]-time_pts[0] 
     
     # We now compute the loss fn, we first need to do some reshaping
     time_pts_shaped = time_pts.repeat(batch_size)
     bt = sde.beta(time_pts_shaped)
-    flat_traj = trajectories.reshape(-1,d).requires_grad_(True)
+    flat_traj = trajectories.reshape(-1,*data_shape).requires_grad_(True)
     
     if optimize_forward:
         opt_policy =  bt**.5 * sde.forward_score(flat_traj,time_pts_shaped) 
@@ -131,12 +131,9 @@ def alternate_sb_loss(sde : SDEs.SchrodingerBridge,trajectories, frozen_policy, 
         opt_policy*= sde.gamma**.5
         aug_opt_policy = torch.cat((torch.zeros_like(opt_policy),opt_policy),dim=1)
         div_term = (sde.gamma * bt)**.5 * hutch_div(aug_opt_policy,flat_traj,time_pts_shaped) 
-        # div_term = (sde.gamma * bt)**.5 * batch_div_exact(aug_backward_score,flat_traj,time_pts_shaped) 
     else:
-        div_term = bt**.5 * batch_div_exact(opt_policy,flat_traj,time_pts_shaped)
-        # div_term = bt**.5 * hutch_div(opt_policy,flat_traj,time_pts_shaped) 
-        
-    loss = torch.sum(opt_policy * (.5 * opt_policy + frozen_policy.view(-1,opt_policy.shape[-1])))/batch_size \
+        div_term = bt**.5 * hutch_div(opt_policy,flat_traj,time_pts_shaped) 
+    loss = torch.sum(opt_policy * (.5 * opt_policy + frozen_policy.view(-1,*data_shape)))/batch_size \
       + torch.sum(div_term)/batch_size
         
     loss = dt * loss
