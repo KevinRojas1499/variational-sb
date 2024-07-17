@@ -133,7 +133,8 @@ def alternate_sb_loss(sde : SDEs.SchrodingerBridge,trajectories, frozen_policy, 
         div_term = (sde.gamma * bt)**.5 * hutch_div(aug_opt_policy,flat_traj,time_pts_shaped) 
     else:
         div_term = bt**.5 * hutch_div(opt_policy,flat_traj,time_pts_shaped) 
-    loss = torch.sum(opt_policy * (.5 * opt_policy + frozen_policy.view(-1,*data_shape)))/batch_size \
+
+    loss = torch.sum(opt_policy * (.5 * opt_policy + frozen_policy.view(-1,*opt_policy.shape[1:])))/batch_size \
       + torch.sum(div_term)/batch_size
         
     loss = dt * loss

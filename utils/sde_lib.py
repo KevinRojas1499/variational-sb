@@ -290,13 +290,14 @@ class MomentumSchrodingerBridge(SchrodingerBridge):
     for i, t in enumerate(time_pts):
       if not forward:
         t = self.T - t
-      t_shape = t.unsqueeze(-1).expand(batch_size,1)
+      t_shape = t.expand(batch_size)
       
       bt = self.beta(t)
       policy = (self.gamma * bt)**.5 * cur_score(zt,t_shape) # g * fw_score
       save_idx = i if forward else -(i+1)
       trajectories[:,save_idx] = zt
       policies[:,save_idx] = policy
+      
       if i == n_time_pts - 1:
         break
       # First we compute everything, we then take an euler step
@@ -417,10 +418,10 @@ class LinearMomentumSchrodingerBridge(MomentumSchrodingerBridge, LinearSDE):
     multipliers = torch.ones(num_pts, device=t.device)
     multipliers[1:-1:2] = 4
     multipliers[2:-1:2] = 2
-    multipliers = multipliers.view(1,-1,1)
     Ats = self.At(time_pts.view(-1,1)) * self.beta(time_pts.view(-1,1))
     Ats = Ats.view(-1,num_pts, *Ats.shape[1:])
-    res = torch.sum(Ats * multipliers,dim=1) * dt.view(-1,1)/3
+    multipliers = multipliers.view(1,-1,*([1] * (len(Ats.shape)-2)))
+    res = torch.sum(Ats * multipliers,dim=1) * dt.view(-1,*([1] * (len(Ats.shape)-2)))/3
     return res
     
   def diffusion(self, z,t):

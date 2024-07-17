@@ -97,7 +97,7 @@ def train(**opts):
     
     if is_sb:
         network_opts = dotdict({
-            'out_shape' : [1, 28, 28] 
+            'out_shape' : [2 if sde.is_augmented else 1, 28, 28] 
         })
         model_forward, ema_forward = get_model(opts.model_forward, sde, device, network_opts)
         sde.forward_score = model_forward
