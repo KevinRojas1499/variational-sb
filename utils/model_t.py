@@ -3,7 +3,8 @@ import math
 import torch
 import torch.nn.functional as F
 from torch import nn, Tensor
-
+from gluonts.torch.util import repeat_along_dim, unsqueeze_expand
+from pts.util import lagged_sequence_values
 
 class DiffusionEmbedding(nn.Module):
     def __init__(self, proj_dim):
@@ -90,11 +91,119 @@ class CondUpsampler(nn.Module):
         return x
 
 
+    def prepare_rnn_input(
+        self,
+        feat_static_cat: torch.Tensor,
+        feat_static_real: torch.Tensor,
+        past_time_feat: torch.Tensor,
+        past_target: torch.Tensor,
+        past_observed_values: torch.Tensor,
+        future_time_feat: torch.Tensor,
+        future_target: Optional[torch.Tensor] = None,
+    ):
+        context = past_target[:, -self.context_length :, ...]
+        observed_context = past_observed_values[:, -self.context_length :, ...]
+
+        input, loc, scale = self.scaler(context, observed_context)
+        future_length = future_time_feat.shape[-2]
+        if future_length > 1:
+            assert future_target is not None
+            input = torch.cat(
+                (input, (future_target[:, : future_length - 1, ...] - loc) / scale),
+                dim=1,
+            )
+        prior_input = (past_target[:, : -self.context_length, ...] - loc) / scale
+
+        lags = lagged_sequence_values(self.lags_seq, prior_input, input, dim=1)
+        time_feat = torch.cat(
+            (past_time_feat[:, -self.context_length + 1 :, ...], future_time_feat),
+            dim=1,
+        )
+
+        embedded_cat = self.embedder(feat_static_cat)
+        log_abs_loc = (
+            loc.abs().log1p() if self.input_size == 1 else loc.squeeze(1).abs().log1p()
+        )
+        log_scale = scale.log() if self.input_size == 1 else scale.squeeze(1).log()
+
+        static_feat = torch.cat(
+            (embedded_cat, feat_static_real, log_abs_loc, log_scale), dim=-1
+        )
+        expanded_static_feat = unsqueeze_expand(
+            static_feat, dim=1, size=time_feat.shape[-2]
+        )
+
+        features = torch.cat((expanded_static_feat, time_feat), dim=-1)
+
+        return torch.cat((lags, features), dim=-1), loc, scale, static_feat
+
+    def unroll_lagged_rnn(
+        self,
+        feat_static_cat: torch.Tensor,
+        feat_static_real: torch.Tensor,
+        past_time_feat: torch.Tensor,
+        past_target: torch.Tensor,
+        past_observed_values: torch.Tensor,
+        future_time_feat: torch.Tensor,
+        future_target: Optional[torch.Tensor] = None,
+    ):
+        """
+        Applies the underlying RNN to the provided target data and covariates.
+
+        Parameters
+        ----------
+        feat_static_cat
+            Tensor of static categorical features,
+            shape: ``(batch_size, num_feat_static_cat)``.
+        feat_static_real
+            Tensor of static real features,
+            shape: ``(batch_size, num_feat_static_real)``.
+        past_time_feat
+            Tensor of dynamic real features in the past,
+            shape: ``(batch_size, past_length, num_feat_dynamic_real)``.
+        past_target
+            Tensor of past target values,
+            shape: ``(batch_size, past_length)``.
+        past_observed_values
+            Tensor of observed values indicators,
+            shape: ``(batch_size, past_length)``.
+        future_time_feat
+            Tensor of dynamic real features in the future,
+            shape: ``(batch_size, prediction_length, num_feat_dynamic_real)``.
+        future_target
+            (Optional) tensor of future target values,
+            shape: ``(batch_size, prediction_length)``.
+
+        Returns
+        -------
+        Tuple
+            A tuple containing, in this order:
+            - Parameters of the output distribution
+            - Scaling factor applied to the target
+            - Raw output of the RNN
+            - Static input to the RNN
+            - Output state from the RNN
+        """
+        rnn_input, loc, scale, static_feat = self.prepare_rnn_input(
+            feat_static_cat,
+            feat_static_real,
+            past_time_feat,
+            past_target,
+            past_observed_values,
+            future_time_feat,
+            future_target,
+        )
+        output, new_state = self.rnn(rnn_input)
+
+        return loc, scale, output, static_feat, new_state
+
+
 class EpsilonTheta(nn.Module):
     def __init__(
         self,
         target_dim,
         cond_dim,
+        interval,
         time_emb_dim=16,
         residual_layers=8,
         residual_channels=8,
@@ -102,6 +211,7 @@ class EpsilonTheta(nn.Module):
         residual_hidden=64,
     ):
         super().__init__()
+        self.interval = interval
         self.input_projection = nn.Conv1d(
             1, residual_channels, 1, padding=2, padding_mode="circular"
         )

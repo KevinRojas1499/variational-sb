@@ -1,7 +1,7 @@
 import torch
 import utils.sde_lib as SDEs
 
-from utils.diff import batch_div_exact, hutch_div
+from utils.diff import hutch_div
 
 #######################################
 #          Diffusion Losses           #
@@ -97,9 +97,7 @@ def joint_sb_loss(sde : SDEs.SchrodingerBridge, in_cond, time_pts):
         backward_scores*= sde.gamma**.5
         aug_backward_score = torch.cat((torch.zeros_like(backward_scores),backward_scores),dim=1)
         div_term = (sde.gamma * bt)**.5 * hutch_div(aug_backward_score,flat_traj,time_pts_shaped) 
-        # div_term = (sde.gamma * bt)**.5 * batch_div_exact(aug_backward_score,flat_traj,time_pts_shaped) 
     else:
-        # div_term = bt**.5 * batch_div_exact(backward_scores,flat_traj,time_pts_shaped)
         div_term = bt**.5 * hutch_div(backward_scores,flat_traj,time_pts_shaped) 
         
     loss = .5 * torch.sum((backward_scores + forward_scores.view(-1,backward_scores.shape[-1]))**2)/batch_size \

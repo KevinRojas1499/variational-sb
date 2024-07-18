@@ -17,11 +17,10 @@ from utils.sde_lib import VP
 
 @torch.no_grad()
 def create_diffusion_prediction(past, sde : VP):
-    return sde.sample((past.shape[0],8880),past.device,cond=past)[0].reshape((past.shape[0],-1, past.shape[-1]))
     prediction = torch.zeros(past.shape[0],30,past.shape[-1], device=past.device)
     cur_past = past.detach().clone()
     for i in range(30):
-        prediction[:,i], _ = sde.sample(prediction[:,i].shape,past.device,cond=cur_past)
+        prediction[:,i] = sde.sample((past.shape[0],past.shape[-1]),past.device,cond=past)[0] 
         cur_past = torch.cat((cur_past[:,1:],prediction[:,i].unsqueeze(1)),dim=1)
     return prediction
 
@@ -37,7 +36,7 @@ def init_wandb(opts):
 
 @click.command()
 @click.option('--dataset',type=click.Choice(['exchange_rate','electricity_nips']), default='electricity_nips')
-@click.option('--batch_size',type=int, default=32)
+@click.option('--batch_size',type=int, default=128)
 @click.option('--lr', type=float, default=3e-4)
 @click.option('--num_epochs',type=int, default=200)
 def train(**opts):
@@ -45,8 +44,9 @@ def train(**opts):
     opts = dotdict(opts)
     batch_size = opts.batch_size
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-    train_ds, test_ds, metadata = get_transformed_dataset(opts.dataset, batch_size,50)
+    train_ds, test_ds, metadata = get_transformed_dataset(opts.dataset, batch_size,100)
     metadata = dotdict(metadata)
+    print(metadata)
     data_dim = metadata.dim
     input_dim = data_dim * metadata.pred_length
     hidden_dim = 40
@@ -60,27 +60,32 @@ def train(**opts):
     opt = Adam(model.parameters(),lr=opts.lr)
     init_wandb(opts)
     for i in tqdm(range(opts.num_epochs)):
+        k = 0
         for batch in train_ds:
-            past = batch['past_target'].to(device)
-            future = batch['future_target'].to(device).view(batch_size,-1)
+            past = batch['past_target'].to(device) * 10 + 50
+            future = batch['future_target'].to(device).view(batch_size,-1) * 10 + 50
             opt.zero_grad()
             
             loss = dsm_loss(sde,future, past)
+            loss.backward()
             
             opt.step()
             
             wandb.log({'loss': loss})
+            k+=1
+        # print(f'Finished an epoch and used a total of {k} iterations')
         
-        if i%50 == 0:
-            past = batch['past_target'][:2]
+        if (i+1)%50 == 0 or i == 0:
+            torch.save(model.state_dict(),f'checkpoints/time_series/{(i+1)}.pt')
             prediction = create_diffusion_prediction(past.to(device),sde)
             figure = go.Figure()
-            idx = torch.arange(past.shape[1])
-            pred_idx = torch.arange(past.shape[1], past.shape[1] + 30)
+            idx = torch.arange(past.shape[1] + 30)
             figure.add_vline(past.shape[1])
-            for i in range(2):
-                figure.add_trace(go.Scatter(x=idx,y=past[i,:,-1].cpu().detach().numpy()))
-                figure.add_trace(go.Scatter(x=pred_idx, y=prediction[i,:,-1].cpu().detach().numpy()))
+            for i in range(4):
+                figure.add_trace(go.Scatter(x=idx,y=torch.cat((past[i,:,-1],prediction[i,:,-1]),dim=-1).cpu().detach().numpy()))
+                figure.update_layout(
+                    yaxis=dict(range=[40, 75])  # Set y-axis limits
+                )
             wandb.log({'figure': figure})
         
     
