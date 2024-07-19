@@ -26,7 +26,7 @@ def get_transformed_dataset(name, batch_size, num_batches_per_epoch):
     test_ds = test_grouper(dataset.test)
 
     # Define the transformation
-    prediction_length = 12
+    prediction_length = 3
     true_pred_length = dataset.metadata.prediction_length
     context_length = dataset.metadata.prediction_length * 3
     metadata = {'dim' :  int(data_dim),
@@ -78,10 +78,11 @@ def get_transformed_dataset(name, batch_size, num_batches_per_epoch):
 
 
 class TimeSeriesDataset(MyDataset):
-    def __init__(self,name, batch_size, num_batches_per_epoch,train=True):
+    def __init__(self,name, batch_size, num_batches_per_epoch):
         super().__init__()
-        train_loader, _, self.metadata = get_transformed_dataset(name, batch_size, num_batches_per_epoch)
+        train_loader, test_loader, self.metadata = get_transformed_dataset(name, batch_size, num_batches_per_epoch)
         self.train_loader = cycle(iter(train_loader))
+        self.test_loader = cycle(iter(test_loader))
     @property
     def out_shape(self):
         return [self.metadata['pred_length'], self.metadata['dim']]
@@ -89,6 +90,6 @@ class TimeSeriesDataset(MyDataset):
     def __iter__(self):
         return self
     
-    def __next__(self):
-        batch = next(self.train_loader) 
+    def __next__(self, train=True):
+        batch = next(self.train_loader) if train else next(self.test_loader)
         return batch['future_target'], batch['past_target'] 

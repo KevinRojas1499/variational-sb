@@ -7,6 +7,7 @@ import plotly.graph_objects as go
 from tqdm import tqdm
 from itertools import chain
 from torch.optim import Adam
+from math import ceil
 
 from utils.training_routines import get_routine
 from utils.sde_lib import get_sde
@@ -86,7 +87,7 @@ def default_log_rate(ctx, param, value):
 @click.option('--lr', type=float, default=3e-4)
 @click.option('--ema_beta', type=float, default=.99)
 @click.option('--clip_grads', is_flag=True, default=False)
-@click.option('--batch_size', type=int, default=512)
+@click.option('--batch_size', type=int, default=128)
 @click.option('--log_rate',type=int,callback=default_log_rate)
 @click.option('--num_iters',type=int,callback=default_num_iters)
 @click.option('--dir',type=str)
@@ -108,10 +109,12 @@ def training(**opts):
     })
     model_backward, ema_backward = get_model(opts.model_backward,sde, device,network_opts=network_opts)
     sde.backward_score, sampling_sde.backward_score = model_backward, ema_backward
+    print(f"Backward Model parameters: {sum(p.numel() for p in model_backward.parameters() if p.requires_grad)//1e6} M")
     if is_sb:
         # We need a forward model
         model_forward , ema_forward  = get_model(opts.model_forward,sde,device,network_opts=network_opts)
         sde.forward_score, sampling_sde.forward_score = model_forward, ema_forward
+        print(f"Forward Model parameters: {sum(p.numel() for p in model_backward.parameters() if p.requires_grad)//1e6} M")
     
     start_iter = 0
     if opts.load_from_ckpt is not None:
@@ -177,19 +180,46 @@ def training(**opts):
             if is_sb:
                 torch.save(model_forward.state_dict(),os.path.join(path, 'forward.pt'))
                 torch.save(ema_forward.state_dict(),os.path.join(path, 'forward_ema.pt'))
-
-            sampling_shape = (1000 if dataset_type else 32, *network_opts.out_shape)
-            new_data, _ = sde.sample(sampling_shape, device)
-            new_data_ema, _  = sampling_sde.sample(sampling_shape, device)
-            if dataset_type == 'toy':
-                relevant_log_info = toy_data_figs([data, new_data, new_data_ema], ['true','normal', 'ema'])
-                wandb.log(relevant_log_info)
-            elif dataset_type == 'image':
-                plot_32_mnist(new_data,os.path.join(opts.dir,f'itr_{i+1}.png'))
+                
+            if dataset_type == 'time-series':
+                future, past = dataset.__next__(train=False)
+                future = future.to(device)
+                past = past.to(device)
+                pred = create_diffusion_time_series_prediction(24,network_opts.out_shape[0],past,sde)
+                pred_ema = create_diffusion_time_series_prediction(24,network_opts.out_shape[0],past,sampling_sde)
+                plot_time_series(past,future,[pred,pred_ema],['pred','ema'])
             else:
-                a = 0
+                sampling_shape = (1000 if dataset_type else 32, *network_opts.out_shape)
+                new_data, _ = sde.sample(sampling_shape, device)
+                new_data_ema, _  = sampling_sde.sample(sampling_shape, device)
+                if dataset_type == 'toy':
+                    relevant_log_info = toy_data_figs([data, new_data, new_data_ema], ['true','normal', 'ema'])
+                    wandb.log(relevant_log_info)
+                elif dataset_type == 'image':
+                    plot_32_mnist(new_data,os.path.join(opts.dir,f'itr_{i+1}.png'))
+
             
     wandb.finish()
+
+@torch.no_grad()
+def create_diffusion_time_series_prediction(tot_pred_length, pred_size, past, sde):
+    k = ceil(tot_pred_length//pred_size)
+    prediction = torch.zeros(past.shape[0],pred_size * k,past.shape[-1], device=past.device)
+    cur_past = past.detach().clone()
+    for i in range(k):
+        prediction[:,pred_size * i:pred_size * (i+1)] = sde.sample((past.shape[0],pred_size, past.shape[-1]),past.device,cond=past)[0] 
+        cur_past = torch.cat((cur_past[:,pred_size:],prediction[:,pred_size * i:pred_size * (i+1)]),dim=1)
+    return prediction
+
+def plot_time_series(past,future, prediction_array, names):
+    figure = go.Figure()
+    idx = torch.arange(past.shape[1] + 30)
+    figure.add_vline(past.shape[1]-1)
+    for j in range(1):
+        figure.add_trace(go.Scatter(x=idx,y=torch.cat((past[j,:,-1],future[j,:,-1]),dim=-1).cpu().detach().numpy(),name=f'True {j}'))
+        for name, prediction in zip(names, prediction_array):
+            figure.add_trace(go.Scatter(x=idx,y=torch.cat((past[j,:,-1],prediction[j,:,-1]),dim=-1).cpu().detach().numpy(),name=f'Prediction {j}-{name}'))
+    wandb.log({'figure': figure})
 
 def toy_data_figs(data_array, names):
     # We assume that the ground truth is in the zeroth position
