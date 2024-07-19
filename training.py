@@ -8,7 +8,7 @@ from tqdm import tqdm
 from itertools import chain
 from torch.optim import Adam
 
-from utils.training_routines import AlternateTrainingRoutine, VariationalDiffusionTrainingRoutine
+from utils.training_routines import get_routine
 from utils.sde_lib import get_sde
 import utils.losses as losses
 from utils.model_utils import get_model, get_preconditioned_model
@@ -40,8 +40,13 @@ def plot_32_mnist(x_t,file_name='mnist_samples.jpeg'):
     fig.savefig(file_name,bbox_inches='tight')
     # plt.close(fig) # TODO : Why is this not working?
 
-def is_toy_dataset(name):
-    return name in ['spiral','checkerboard']
+def get_dataset_type(name):
+    if name in ['spiral','checkerboard']:
+        return 'toy'
+    elif name in ['mnist']:
+        return 'image'
+    else:
+        return 'time-series'
 
 def is_sb_sde(name):
     return (name in ['sb','linear-sb','momentum-sb','linear-momentum-sb'])
@@ -72,7 +77,7 @@ def default_log_rate(ctx, param, value):
 @click.option('--model_backward',type=click.Choice(['mlp','unet', 'linear']), default='mlp')
 @click.option('--precondition', is_flag=True, default=False)
 @click.option('--sde',type=click.Choice(['vp','cld','sb','edm', 'linear-sb','momentum-sb','linear-momentum-sb']), default='vp')
-@click.option('--loss_routine', type=click.Choice(['joint','alternate','variational']),default='alternate')
+@click.option('--loss_routine', type=click.Choice(['joint','alternate','variational','none']),default='none')
 @click.option('--dsm_warm_up', type=int, default=2000, help='Perform first iterations using just DSM')
 @click.option('--dsm_cool_down', type=int, default=5000, help='Perform last iterations using just DSM')
 @click.option('--forward_opt_steps', type=int, default=5, help='Number of forward opt steps in alternate training scheme')
@@ -89,13 +94,12 @@ def default_log_rate(ctx, param, value):
 @click.option('--load_from_ckpt', type=str)
 def training(**opts):
     opts = dotdict(opts)
-    print(opts)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(opts)
     print(device)
     dataset = get_dataset(opts)
-    is_toy = is_toy_dataset(opts.dataset)
+    dataset_type = get_dataset_type(opts.dataset)
     is_sb = is_sb_sde(opts.sde)
-    is_alternate_training = (is_sb and opts.loss_routine == 'alternate')
     sde = get_sde(opts.sde)
     sampling_sde = get_sde(opts.sde)
     # Set up backwards model
@@ -106,13 +110,11 @@ def training(**opts):
         'out_shape' : [2 if sde.is_augmented else 1, 28, 28] 
     })
     model_backward, ema_backward = get_model(opts.model_backward,sde, device,network_opts=network_opts)
-    sde.backward_score = model_backward
-    sampling_sde.backward_score = ema_backward
+    sde.backward_score, sampling_sde.backward_score = model_backward, ema_backward
     if is_sb:
         # We need a forward model
         model_forward , ema_forward  = get_model(opts.model_forward,sde,device,network_opts=network_opts)
-        sde.forward_score = model_forward
-        sampling_sde.forward_score = ema_forward
+        sde.forward_score, sampling_sde.forward_score = model_forward, ema_forward
     
     start_iter = 0
     if opts.load_from_ckpt is not None:
@@ -133,31 +135,22 @@ def training(**opts):
     
     num_iters = opts.num_iters
     log_sample_quality=opts.log_rate
-    if is_alternate_training:
-        routine = AlternateTrainingRoutine(sde,sampling_sde,model_forward,model_backward,opts.refresh_rate,100,device)
-    elif opts.loss_routine == 'variational':
-        routine = VariationalDiffusionTrainingRoutine(sde,sampling_sde,model_forward,model_backward,
-                                                      opts.dsm_warm_up,opts.num_iters-opts.dsm_warm_up - opts.dsm_cool_down, opts.dsm_cool_down,
-                                                      opts.forward_opt_steps, opts.backward_opt_steps,100,device)
-    loss_fn = losses.get_loss(opts.sde, is_alternate_training) 
+    routine = get_routine(sde,sampling_sde,opts)
 
     init_wandb(opts)
     
     pbar = tqdm(range(start_iter, start_iter+opts.num_iters))
     for i in pbar:
-        if is_toy:
-            data = next(dataset)
+        if dataset_type == 'toy':
+            data, cond = next(dataset), None
         else:
-            data, label = next(dataset)
+            data, cond = next(dataset)
+            cond.to(device)
+            
         data = data.to(device)
         opt.zero_grad()
 
-        if is_alternate_training:
-            loss = routine.training_iteration(i,data)
-        elif opts.loss_routine == 'variational':
-            loss = routine.training_iteration(i,data)
-        else:
-            loss = loss_fn(sde,data)            
+        loss = routine.training_iteration(i,data, cond)           
         loss.backward()
         
         if opts.clip_grads:
@@ -188,14 +181,16 @@ def training(**opts):
                 torch.save(model_forward.state_dict(),os.path.join(path, 'forward.pt'))
                 torch.save(ema_forward.state_dict(),os.path.join(path, 'forward_ema.pt'))
 
-            sampling_shape = (1000 if is_toy else 32, *network_opts.out_shape)
+            sampling_shape = (1000 if dataset_type else 32, *network_opts.out_shape)
             new_data, _ = sde.sample(sampling_shape, device)
             new_data_ema, _  = sampling_sde.sample(sampling_shape, device)
-            if is_toy:
+            if dataset_type == 'toy':
                 relevant_log_info = toy_data_figs([data, new_data, new_data_ema], ['true','normal', 'ema'])
                 wandb.log(relevant_log_info)
-            else:
+            elif dataset_type == 'image':
                 plot_32_mnist(new_data,os.path.join(opts.dir,f'itr_{i+1}.png'))
+            else:
+                a = 0
             
     wandb.finish()
 

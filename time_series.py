@@ -51,7 +51,6 @@ def train(**opts):
     data_dim = metadata.dim
     pred_length = metadata.pred_length
     cond_length = metadata.cond_length
-    input_dim = data_dim * metadata.pred_length
     hidden_dim = 40
     t_embedding_dim = 40
 
