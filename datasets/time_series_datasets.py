@@ -25,12 +25,13 @@ def get_transformed_dataset(name, batch_size, num_batches_per_epoch):
 
     # Define the transformation
     prediction_length = 1
-    context_length = dataset.metadata.prediction_length #* 3
+    true_pred_length = dataset.metadata.prediction_length
+    context_length = dataset.metadata.prediction_length * 3
     metadata = {'dim' :  int(data_dim),
                 'pred_length' : int(prediction_length),
                 'cond_length' : int(context_length)}
 
-    splitter = InstanceSplitter(
+    splitter_train = InstanceSplitter(
         target_field=FieldName.TARGET,
         is_pad_field=FieldName.IS_PAD,
         start_field=FieldName.START,
@@ -42,19 +43,31 @@ def get_transformed_dataset(name, batch_size, num_batches_per_epoch):
         past_length=context_length,
         future_length=prediction_length
     )
+    splitter_test = InstanceSplitter(
+        target_field=FieldName.TARGET,
+        is_pad_field=FieldName.IS_PAD,
+        start_field=FieldName.START,
+        forecast_start_field=FieldName.FORECAST_START,
+        instance_sampler=ExpectedNumInstanceSampler(
+            num_instances=1,
+            min_future=true_pred_length,
+        ),
+        past_length=context_length,
+        future_length=true_pred_length # Only difference is that we are predicting for longer
+    )
 
 
     # Create the DataLoader
     train_dataloader = TrainDataLoader(
         dataset=train_ds,
-        transform=splitter,
+        transform=splitter_train,
         batch_size=batch_size,
         num_batches_per_epoch=num_batches_per_epoch,
         stack_fn=batchify
     )
     test_dataloader = TrainDataLoader(
         dataset=test_ds,
-        transform=splitter,
+        transform=splitter_test,
         batch_size=batch_size,
         num_batches_per_epoch=num_batches_per_epoch,
         stack_fn=batchify

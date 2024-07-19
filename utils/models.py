@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import numpy as np
 import math 
 
@@ -96,8 +97,102 @@ class SimpleNN(nn.Module):
         t_embedded = self.t_embedding(t)  # shape: [B, t_embedding_dim]
         combined = torch.cat((encoded_cond, t_embedded), dim=1)  # shape: [B, hidden_dim + t_embedding_dim]
         
-        combined = self.fc1(combined)  # shape: [B, input_dim]
-        
+        combined = self.fc1(combined).unsqueeze(1)  # shape: [B, input_dim]
         out = torch.cat((combined,x),dim=-1)  # shape: [B, input_dim]
         out = self.fc2(out)  # shape: [B, input_dim]
-        return out
+        return out#.view(B,L,D)
+
+
+class ResidualBlock(nn.Module):
+    def __init__(self, hidden_size, in_channels, residual_channels, dilation):
+        super().__init__()
+        self.dilated_conv = nn.Conv1d(
+            residual_channels,
+            2 * residual_channels,
+            3,
+            padding=dilation,
+            dilation=dilation,
+            padding_mode="circular",
+        )
+        self.diffusion_projection = nn.Linear(hidden_size, residual_channels)
+        self.conditioner_projection = nn.Sequential(nn.Conv1d(
+            in_channels, 2 * residual_channels, 1, padding=2, padding_mode="circular"
+        ), nn.Linear(hidden_size+4,6))
+        self.output_projection = nn.Conv1d(residual_channels, 2 * residual_channels, 1)
+
+    #     nn.init.kaiming_normal_(self.conditioner_projection.weight)
+    #     nn.init.kaiming_normal_(self.output_projection.weight)
+
+    # def kaiming_normal_init(self, module):
+    #     if isinstance(module, nn.Linear):
+    #         torch.nn.init.kaiming_normal_(module.weight)
+        
+
+    def forward(self, x, cond, t_embed):
+        t_embed = self.diffusion_projection(t_embed).unsqueeze(-1)
+        cond = self.conditioner_projection(cond)
+        y = x + t_embed
+        y = self.dilated_conv(y) + cond
+
+        gate, filter = torch.chunk(y, 2, dim=1)
+        y = torch.sigmoid(gate) * torch.tanh(filter)
+
+        y = self.output_projection(y)
+        y = F.leaky_relu(y, 0.4)
+        residual, skip = torch.chunk(y, 2, dim=1)
+        return (x + residual) / math.sqrt(2.0), skip
+    
+class TimeSeriesNetwork(nn.Module):
+    def __init__(self, input_dim, cond_input_dim, cond_length, hidden_dim, t_embedding_dim, 
+                 residual_channels=8,dilation_cycle_length=2, num_residual_layers=8):
+        super(TimeSeriesNetwork, self).__init__()
+        
+        self.cond_encoder = nn.LSTM(input_size=cond_input_dim, hidden_size=hidden_dim, num_layers=3,batch_first=True)
+        self.input_projection = nn.Sequential(
+            nn.Conv1d(1, residual_channels, 1, padding=2, padding_mode="circular"),
+            nn.SiLU())                        
+        self.residual_blocks = nn.ModuleList(
+            [ResidualBlock(in_channels=cond_length,residual_channels=residual_channels,
+                           dilation=2**(i%dilation_cycle_length),
+                           hidden_size=hidden_dim)
+                for i in range(num_residual_layers)
+             ]
+        )
+        self.out = nn.Sequential(nn.Linear((input_dim + 4) * residual_channels,128), # + 4 is coming from the padding in the convolutional layers
+                                 nn.SiLU(),
+                                 nn.Linear(128, input_dim))
+
+        self.t_embedding =  nn.Sequential(
+            nn.Linear(1,128),
+            nn.SiLU(),
+            nn.Linear(128,256),
+            nn.SiLU(),
+            nn.Linear(256,128),
+            nn.SiLU(),
+            nn.Linear(128,t_embedding_dim)
+        )
+
+    def forward(self, x, t, cond):
+        # x    : [B, D]
+        # t    : [B, 1]
+        # cond : [B, cond_length, D]
+        # out  : [B, D]
+        B,L,D = x.shape
+        # Encode Input
+        x = self.input_projection(x) # Encode input
+        
+        # Encode time TODO : Do better encoding
+        t = t.view(-1,1)
+        t_embedded = self.t_embedding(t)  # shape: [B, t_embedding_dim]
+        
+        #Encode condition
+        out, (hn, cn) = self.cond_encoder(cond)
+        encoded_cond = out
+        skip = []
+        for layer in self.residual_blocks:
+            x, skip_connection = layer(x, encoded_cond, t_embedded)
+            skip.append(skip_connection)
+            
+        x = torch.sum(torch.stack(skip), dim=0) / math.sqrt(len(skip))
+        x = self.out(x.view(B,L,-1))
+        return x
