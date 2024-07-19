@@ -1,4 +1,6 @@
 import warnings
+from itertools  import cycle
+from datasets.toy_datasets import MyDataset
 
 from gluonts.dataset.repository import get_dataset
 from gluonts.dataset.loader import TrainDataLoader
@@ -24,7 +26,7 @@ def get_transformed_dataset(name, batch_size, num_batches_per_epoch):
     test_ds = test_grouper(dataset.test)
 
     # Define the transformation
-    prediction_length = 6
+    prediction_length = 12
     true_pred_length = dataset.metadata.prediction_length
     context_length = dataset.metadata.prediction_length * 3
     metadata = {'dim' :  int(data_dim),
@@ -73,3 +75,20 @@ def get_transformed_dataset(name, batch_size, num_batches_per_epoch):
         stack_fn=batchify
     )
     return train_dataloader, test_dataloader, metadata
+
+
+class TimeSeriesDataset(MyDataset):
+    def __init__(self,name, batch_size, num_batches_per_epoch,train=True):
+        super().__init__()
+        train_loader, _, self.metadata = get_transformed_dataset(name, batch_size, num_batches_per_epoch)
+        self.train_loader = cycle(iter(train_loader))
+    @property
+    def out_shape(self):
+        return [self.metadata['pred_length'], self.metadata['dim']]
+    
+    def __iter__(self):
+        return self
+    
+    def __next__(self):
+        batch = next(self.train_loader) 
+        return batch['future_target'], batch['past_target'] 

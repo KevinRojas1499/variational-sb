@@ -8,7 +8,7 @@ from torch.optim.adam import Adam
 from tqdm import tqdm
 
 from utils.misc import dotdict
-from datasets.time_series_datasets import get_transformed_dataset
+from datasets.time_series_datasets import get_transformed_dataset, TimeSeriesDataset
 from utils.models import SimpleNN, TimeSeriesNetwork
 from utils.model_utils import PrecondVP
 from utils.losses import dsm_loss
@@ -16,11 +16,11 @@ from utils.sde_lib import VP
 
 @torch.no_grad()
 def create_diffusion_prediction(pred_size, past, sde : VP):
-    prediction = torch.zeros(past.shape[0],pred_size * 8,past.shape[-1], device=past.device)
+    prediction = torch.zeros(past.shape[0],pred_size * 2,past.shape[-1], device=past.device)
     cur_past = past.detach().clone()
-    for i in range(8):
+    for i in range(2):
         prediction[:,pred_size * i:pred_size * (i+1)] = sde.sample((past.shape[0],pred_size, past.shape[-1]),past.device,cond=past)[0] 
-        cur_past = torch.cat((cur_past[:,1:],prediction[:,i:i+1]),dim=1)
+        cur_past = torch.cat((cur_past[:,pred_size:],prediction[:,pred_size * i:pred_size * (i+1)]),dim=1)
     return prediction
 
 def init_wandb(opts):
@@ -46,43 +46,42 @@ def train(**opts):
     batch_size = opts.batch_size
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     train_ds, test_ds, metadata = get_transformed_dataset(opts.dataset, batch_size,100)
+    train_ds = TimeSeriesDataset(opts.dataset, batch_size,100)
     metadata = dotdict(metadata)
     print(metadata)
     data_dim = metadata.dim
     pred_length = metadata.pred_length
     cond_length = metadata.cond_length
     hidden_dim = 40
-    t_embedding_dim = 40
 
     # model = SimpleNN(input_dim=input_dim, cond_input_dim=data_dim,hidden_dim=hidden_dim, t_embedding_dim=t_embedding_dim).to(device)
-    model = TimeSeriesNetwork(input_dim=data_dim, pred_length= pred_length,cond_length=cond_length,hidden_dim=hidden_dim, t_embedding_dim=t_embedding_dim).to(device)
+    model = TimeSeriesNetwork(input_dim=data_dim, pred_length= pred_length,cond_length=cond_length,hidden_dim=hidden_dim).to(device)
     if opts.load_from_ckpt is not None:
         model.load_state_dict(torch.load(opts.load_from_ckpt))
     sde = VP()
     sde.backward_score = PrecondVP(model,sde)
 
+    print(f'Num of parameters {sum(m.numel() for m in model.parameters())}')
     opt = Adam(model.parameters(),lr=opts.lr)
     init_wandb(opts)
-    for i in tqdm(range(opts.num_epochs)):
-        k = 0
-        for batch in train_ds:
-            past = batch['past_target'].to(device)# * 10 + 50
-            future = batch['future_target'].to(device) #* 10 + 50
-            opt.zero_grad()
-            
-            loss = dsm_loss(sde,future, past)
-            loss.backward()
-            
-            opt.step()
-            
-            wandb.log({'loss': loss})
-            k+=1
-        # print(f'Finished an epoch and used a total of {k} iterations')
+
+    for i in tqdm(range(opts.num_epochs * 100)):
+        future, past = next(train_ds)
+        past = past.to(device)
+        future = future.to(device)
+        opt.zero_grad()
         
-        if (i+1)%50 == 0 or i == 0:
+        loss = dsm_loss(sde,future, past)
+        loss.backward()
+        
+        opt.step()
+        
+        wandb.log({'loss': loss})
+    
+        if (i+1)%5000 == 0:
             batch = next(iter(test_ds))
-            past = batch['past_target'].to(device)# * 10 + 50
-            future = batch['future_target'].to(device) #* 10 + 50
+            past = batch['past_target'].to(device)
+            future = batch['future_target'].to(device)
             torch.save(model.state_dict(),f'checkpoints/time_series/{(i+1)}.pt')
             prediction = create_diffusion_prediction(pred_length, past.to(device),sde)
             figure = go.Figure()

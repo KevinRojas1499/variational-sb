@@ -3,7 +3,7 @@ import torch
 
 
 from utils.sde_lib import SDE, VP, CLD
-from utils.models import MLP, MatrixTimeEmbedding
+from utils.models import MLP, MatrixTimeEmbedding, TimeSeriesNetwork
 from utils.misc import batch_matrix_product
 from utils.unet import ScoreNet
 
@@ -59,6 +59,11 @@ def get_model(name, sde : SDE, device, network_opts=None):
         model = torch.nn.DataParallel(ScoreNet(in_channels=2 if sde.is_augmented else 1))
         ema = torch.nn.DataParallel(ScoreNet(in_channels=2 if sde.is_augmented else 1))
         return model.requires_grad_(True).to(device=device), ema.requires_grad_(False).to(device=device) 
+    elif name == 'time-series':
+        pred_len, dim = network_opts.out_shape
+        return TimeSeriesNetwork(input_dim=dim, pred_length=pred_len,cond_length=network_opts.cond_length).requires_grad_(True).to(device=device), \
+            TimeSeriesNetwork(input_dim=dim, pred_length=pred_len,cond_length=network_opts.cond_length).requires_grad_(False).to(device=device)
+
 def get_preconditioned_model(model, sde):
     if isinstance(sde, VP):
         return PrecondVP(model,sde)

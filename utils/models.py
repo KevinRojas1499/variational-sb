@@ -143,11 +143,11 @@ class ResidualBlock(nn.Module):
         return (x + residual) / math.sqrt(2.0), skip
 
 class TimeSeriesNetwork(nn.Module):
-    def __init__(self, input_dim, pred_length, cond_length, hidden_dim, t_embedding_dim, 
-                 residual_channels=8,dilation_cycle_length=2, num_residual_layers=8):
+    def __init__(self, input_dim, pred_length, cond_length, hidden_dim=64, 
+                 residual_channels=32,dilation_cycle_length=2, num_residual_layers=8):
         super(TimeSeriesNetwork, self).__init__()
         
-        self.cond_encoder = nn.LSTM(input_size=input_dim, hidden_size=hidden_dim, num_layers=3,batch_first=True)
+        self.cond_encoder = nn.LSTM(input_size=input_dim, hidden_size=hidden_dim, num_layers=6,batch_first=True)
         self.input_projection = nn.Sequential(
             nn.Conv1d(pred_length, residual_channels, 1, padding=2, padding_mode="circular"),
             nn.SiLU())                        
@@ -171,15 +171,14 @@ class TimeSeriesNetwork(nn.Module):
             nn.SiLU(),
             nn.Linear(256,128),
             nn.SiLU(),
-            nn.Linear(128,t_embedding_dim)
+            nn.Linear(128,hidden_dim)
         )
 
     def forward(self, x, t, cond):
-        # x    : [B, D]
-        # t    : [B, 1]
+        # x    : [B, pred_length, D]
+        # t    : [B]
         # cond : [B, cond_length, D]
-        # out  : [B, D]
-        B,L,D = x.shape
+        # out  : [B, pred_length, D]
         # Encode Input
         x = self.input_projection(x) # Encode input
         

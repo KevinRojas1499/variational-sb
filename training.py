@@ -10,9 +10,8 @@ from torch.optim import Adam
 
 from utils.training_routines import get_routine
 from utils.sde_lib import get_sde
-import utils.losses as losses
 from utils.model_utils import get_model, get_preconditioned_model
-from datasets.toy_datasets import get_dataset
+from datasets.dataset_utils import get_dataset
 from utils.metrics import get_w2
 from utils.misc import dotdict
 
@@ -72,9 +71,9 @@ def default_log_rate(ctx, param, value):
     return 2000 if is_sb_sde(sde) else 2000
 
 @click.command()
-@click.option('--dataset',type=click.Choice(['mnist','spiral','checkerboard']))
+@click.option('--dataset',type=click.Choice(['mnist','spiral','checkerboard','exchange_rate']))
 @click.option('--model_forward',type=click.Choice(['mlp','linear']), default='mlp')
-@click.option('--model_backward',type=click.Choice(['mlp','unet', 'linear']), default='mlp')
+@click.option('--model_backward',type=click.Choice(['mlp','unet', 'linear','time-series']), default='mlp')
 @click.option('--precondition', is_flag=True, default=False)
 @click.option('--sde',type=click.Choice(['vp','cld','sb','edm', 'linear-sb','momentum-sb','linear-momentum-sb']), default='vp')
 @click.option('--loss_routine', type=click.Choice(['joint','alternate','variational','none']),default='none')
@@ -104,10 +103,8 @@ def training(**opts):
     sampling_sde = get_sde(opts.sde)
     # Set up backwards model
     network_opts = dotdict({
-        'out_shape' : [4 if sde.is_augmented else 2] 
-    })
-    network_opts = dotdict({
-        'out_shape' : [2 if sde.is_augmented else 1, 28, 28] 
+        'out_shape' : dataset.out_shape,
+        'cond_length' : 90
     })
     model_backward, ema_backward = get_model(opts.model_backward,sde, device,network_opts=network_opts)
     sde.backward_score, sampling_sde.backward_score = model_backward, ema_backward
@@ -145,7 +142,7 @@ def training(**opts):
             data, cond = next(dataset), None
         else:
             data, cond = next(dataset)
-            cond.to(device)
+            cond = cond.to(device)
             
         data = data.to(device)
         opt.zero_grad()
