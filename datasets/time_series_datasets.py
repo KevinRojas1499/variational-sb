@@ -24,7 +24,7 @@ def get_transformed_dataset(name, batch_size, num_batches_per_epoch):
     test_ds = test_grouper(dataset.test)
 
     # Define the transformation
-    prediction_length = 1
+    prediction_length = 6
     true_pred_length = dataset.metadata.prediction_length
     context_length = dataset.metadata.prediction_length * 3
     metadata = {'dim' :  int(data_dim),

@@ -141,15 +141,15 @@ class ResidualBlock(nn.Module):
         y = F.leaky_relu(y, 0.4)
         residual, skip = torch.chunk(y, 2, dim=1)
         return (x + residual) / math.sqrt(2.0), skip
-    
+
 class TimeSeriesNetwork(nn.Module):
-    def __init__(self, input_dim, cond_input_dim, cond_length, hidden_dim, t_embedding_dim, 
+    def __init__(self, input_dim, pred_length, cond_length, hidden_dim, t_embedding_dim, 
                  residual_channels=8,dilation_cycle_length=2, num_residual_layers=8):
         super(TimeSeriesNetwork, self).__init__()
         
-        self.cond_encoder = nn.LSTM(input_size=cond_input_dim, hidden_size=hidden_dim, num_layers=3,batch_first=True)
+        self.cond_encoder = nn.LSTM(input_size=input_dim, hidden_size=hidden_dim, num_layers=3,batch_first=True)
         self.input_projection = nn.Sequential(
-            nn.Conv1d(1, residual_channels, 1, padding=2, padding_mode="circular"),
+            nn.Conv1d(pred_length, residual_channels, 1, padding=2, padding_mode="circular"),
             nn.SiLU())                        
         self.residual_blocks = nn.ModuleList(
             [ResidualBlock(in_channels=cond_length,residual_channels=residual_channels,
@@ -158,7 +158,9 @@ class TimeSeriesNetwork(nn.Module):
                 for i in range(num_residual_layers)
              ]
         )
-        self.out = nn.Sequential(nn.Linear((input_dim + 4) * residual_channels,128), # + 4 is coming from the padding in the convolutional layers
+        self.outtt = nn.Conv1d(residual_channels,pred_length,1)
+        self.out = nn.Sequential(
+            nn.Linear((input_dim + 4),128), # + 4 is coming from the padding in the convolutional layers
                                  nn.SiLU(),
                                  nn.Linear(128, input_dim))
 
@@ -192,7 +194,7 @@ class TimeSeriesNetwork(nn.Module):
         for layer in self.residual_blocks:
             x, skip_connection = layer(x, encoded_cond, t_embedded)
             skip.append(skip_connection)
-            
         x = torch.sum(torch.stack(skip), dim=0) / math.sqrt(len(skip))
-        x = self.out(x.view(B,L,-1))
+        x = self.outtt(x)
+        x = self.out(x)
         return x

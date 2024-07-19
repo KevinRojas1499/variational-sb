@@ -11,16 +11,15 @@ from utils.misc import dotdict
 from datasets.time_series_datasets import get_transformed_dataset
 from utils.models import SimpleNN, TimeSeriesNetwork
 from utils.model_utils import PrecondVP
-from utils.model_t import EpsilonTheta
 from utils.losses import dsm_loss
 from utils.sde_lib import VP
 
 @torch.no_grad()
-def create_diffusion_prediction(past, sde : VP):
-    prediction = torch.zeros(past.shape[0],30,past.shape[-1], device=past.device)
+def create_diffusion_prediction(pred_size, past, sde : VP):
+    prediction = torch.zeros(past.shape[0],pred_size * 8,past.shape[-1], device=past.device)
     cur_past = past.detach().clone()
-    for i in range(30):
-        prediction[:,i:i+1] = sde.sample((past.shape[0],1, past.shape[-1]),past.device,cond=past)[0] 
+    for i in range(8):
+        prediction[:,pred_size * i:pred_size * (i+1)] = sde.sample((past.shape[0],pred_size, past.shape[-1]),past.device,cond=past)[0] 
         cur_past = torch.cat((cur_past[:,1:],prediction[:,i:i+1]),dim=1)
     return prediction
 
@@ -50,16 +49,16 @@ def train(**opts):
     metadata = dotdict(metadata)
     print(metadata)
     data_dim = metadata.dim
+    pred_length = metadata.pred_length
     cond_length = metadata.cond_length
     input_dim = data_dim * metadata.pred_length
     hidden_dim = 40
     t_embedding_dim = 40
 
     # model = SimpleNN(input_dim=input_dim, cond_input_dim=data_dim,hidden_dim=hidden_dim, t_embedding_dim=t_embedding_dim).to(device)
-    model = TimeSeriesNetwork(input_dim=input_dim, cond_input_dim=data_dim, cond_length=cond_length,hidden_dim=hidden_dim, t_embedding_dim=t_embedding_dim).to(device)
+    model = TimeSeriesNetwork(input_dim=data_dim, pred_length= pred_length,cond_length=cond_length,hidden_dim=hidden_dim, t_embedding_dim=t_embedding_dim).to(device)
     if opts.load_from_ckpt is not None:
         model.load_state_dict(torch.load(opts.load_from_ckpt))
-    # model = EpsilonTheta(input_dim,metadata.cond_length)
     sde = VP()
     sde.backward_score = PrecondVP(model,sde)
 
@@ -81,16 +80,16 @@ def train(**opts):
             k+=1
         # print(f'Finished an epoch and used a total of {k} iterations')
         
-        if (i+1)%50 == 0:
+        if (i+1)%50 == 0 or i == 0:
             batch = next(iter(test_ds))
             past = batch['past_target'].to(device)# * 10 + 50
             future = batch['future_target'].to(device) #* 10 + 50
             torch.save(model.state_dict(),f'checkpoints/time_series/{(i+1)}.pt')
-            prediction = create_diffusion_prediction(past.to(device),sde)
+            prediction = create_diffusion_prediction(pred_length, past.to(device),sde)
             figure = go.Figure()
             idx = torch.arange(past.shape[1] + 30)
             figure.add_vline(past.shape[1])
-            for j in range(4):
+            for j in range(2):
                 figure.add_trace(go.Scatter(x=idx,y=torch.cat((past[j,:,-1],prediction[j,:,-1]),dim=-1).cpu().detach().numpy(),name=f'Prediction {j}'))
                 figure.add_trace(go.Scatter(x=idx,y=torch.cat((past[j,:,-1],future[j,:,-1]),dim=-1).cpu().detach().numpy(),name=f'True {j}'))
                 # figure.update_layout(
