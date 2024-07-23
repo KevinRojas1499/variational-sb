@@ -14,11 +14,22 @@ from gluonts.torch.scaler import MeanScaler, NOPScaler, Scaler, StdScaler
 from gluonts.torch.util import repeat_along_dim, unsqueeze_expand
 from pts.util import lagged_sequence_values
 
-from diffusion import Diffusion, SchroedingerBridge
 
 from epsilon_theta import EpsilonTheta
 from linear_policy import LinearPolicy
 
+import matplotlib.pyplot as plt
+# script.py
+import sys
+import os
+
+# Add the parent directory to the sys.path to ensure it can find hello.py
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+from utils.training_routines import EvalLossRoutine
+import utils.sde_lib as SDEs
+from utils.losses import dsm_loss
 
 class DiffusionModel(nn.Module):
     """
@@ -177,26 +188,7 @@ class DiffusionModel(nn.Module):
             interval=self.n_timestep,
         )
 
-        if ddpm_baseline:
-            self.diffuser = Diffusion(
-                dim=input_size,
-                beta_min=self.beta_min,
-                beta_max=self.beta_max,
-                interval=self.n_timestep,
-                backward_net=self.backward_net,
-            )
-        else:
-            self.diffuser = SchroedingerBridge(
-                dim=input_size,
-                t0=self.t0,
-                T=self.T,
-                interval=self.n_timestep,
-                beta_min=self.beta_min,
-                beta_max=self.beta_max,
-                beta_r=self.beta_r,
-                forward_net=self.forward_net,
-                backward_net=self.backward_net,
-            )
+        self.sde = SDEs.VP(model_backward=self.backward_net)
 
 
     def describe_inputs(self, batch_size=1) -> InputSpec:
@@ -431,10 +423,11 @@ class DiffusionModel(nn.Module):
         )
 
         # sample
-        next_sample = self.diffuser.sample(
-            torch.randn_like(repeated_past_target[:, -1:, ...]),
-            repeated_outputs[:, -1:, ...],
-        )
+        next_sample = self.sde.sample(shape=repeated_past_target[:, -1:, ...].shape,
+                device=repeated_past_target[:, -1:, ...].device,
+            cond=repeated_outputs[:, -1:, ...])[0]
+        print(f'Next sample has shape {next_sample.shape}')
+        
         future_samples = [repeated_scale * next_sample + repeated_loc]
 
         for k in range(1, self.prediction_length):
@@ -453,11 +446,10 @@ class DiffusionModel(nn.Module):
                 (repeated_past_target, next_sample), dim=1
             )
 
-            next_sample = self.diffuser.sample(
-                torch.randn_like(repeated_past_target[:, -1:, ...]),
-                repeated_outputs,
-            )
-            # print(f'Next sample has shape {next_sample.shape}')
+            next_sample = self.sde.sample(shape=repeated_past_target[:, -1:, ...].shape,
+                device=repeated_past_target[:, -1:, ...].device,
+                cond=repeated_outputs[:, -1:, ...])[0]
+            print(f'Next sample has shape {next_sample.shape}')
             future_samples.append(repeated_scale * next_sample + repeated_loc)
 
         future_samples_concat = torch.cat(future_samples, dim=1).reshape(
@@ -473,13 +465,7 @@ class DiffusionModel(nn.Module):
         observed_values: Tensor,
         direction: str,
     ):
-        if direction == 'forward':
-            loss = self.diffuser.get_sb_loss(x=target, cond=rnn_outputs, direction='forward')
-        elif direction == 'backward':
-            # print('----- DSM LOSS ------')
-            # print(f'target {target.shape} \n cond {rnn_outputs.shape}')
-            loss = self.diffuser.get_backward_loss(x=target, cond=rnn_outputs)
-        loss = loss.mean(-1) * observed_values
+        loss = dsm_loss(self.sde,target.reshape(-1,1,target.shape[-1]),rnn_outputs.reshape(-1,1,rnn_outputs.shape[-1]))
         return loss
 
     def loss(
@@ -496,7 +482,14 @@ class DiffusionModel(nn.Module):
         aggregate_by=torch.mean,
         direction: str = None,
     ) -> torch.Tensor:
-
+        # print('Past / Future')
+        # print(past_observed_values.shape, future_target.shape)
+        # idx = torch.arange(past_observed_values.shape[1] + future_target.shape[1])
+        # plt.plot(idx.numpy(),torch.cat((past_target,future_target),dim=1)[0,:,0].cpu().numpy())
+        # plt.plot(idx.numpy(),torch.cat((past_target,future_target),dim=1)[1,:,1].cpu().numpy())
+        # plt.plot(idx.numpy(),torch.cat((past_target,future_target),dim=1)[2,:,2].cpu().numpy())
+        # plt.legend(['1','2','3'])
+        # plt.show()
         extra_dims = len(future_target.shape) - len(past_target.shape)
         extra_shape = future_target.shape[:extra_dims]
 
@@ -524,8 +517,10 @@ class DiffusionModel(nn.Module):
             future_time_feat,
             future_target_reshaped,
         )
-
+        # print('RNN OUTPUTS')
+        # print(rnn_outputs.shape)
         if future_only:
+            # print('Future only')
             sliced_rnn_outputs = rnn_outputs[:, -self.prediction_length :]
             observed_values = (
                 future_observed_reshaped.all(-1)
@@ -563,4 +558,4 @@ class DiffusionModel(nn.Module):
                 direction=direction,
             )
 
-        return aggregate_by(loss, dim=(1,))
+        return loss

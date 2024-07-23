@@ -8,7 +8,7 @@ from gluonts.dataset.loader import as_stacked_batches
 from gluonts.dataset.stat import calculate_dataset_statistics
 from gluonts.itertools import Cyclic
 from gluonts.time_feature import TimeFeature, time_features_from_frequency_str
-from gluonts.torch.model.estimator import PyTorchLightningEstimator, 
+from gluonts.torch.model.estimator import PyTorchLightningEstimator
 from gluonts.torch.model.predictor import PyTorchPredictor
 from gluonts.transform import (
     AddAgeFeature,

@@ -1,6 +1,12 @@
 import torch
 from torch import nn, Tensor
-from sde import compute_vp_diffusion
+
+import sys
+import os
+
+# Add the parent directory to the sys.path to ensure it can find hello.py
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from utils.sde_lib import VP
 
 def build_linear(zero_out_last_layer):
     return LinearPolicy(zero_out_last_layer=zero_out_last_layer)
@@ -21,6 +27,8 @@ class LinearPolicy(nn.Module):
         self.beta_max = beta_max
         self.beta_r = beta_r
         self.interval = interval
+        
+        self.sde = VP()
 
         self.A = nn.Parameter(torch.zeros(data_dim, data_dim))
 
@@ -59,13 +67,7 @@ class LinearPolicy(nn.Module):
 
         out = x @ self.A.T
 
-        diffusion = compute_vp_diffusion(
-            t,
-            b_min=self.beta_min,
-            b_max=self.beta_max,
-            b_r=self.beta_r,
-            T=self.interval,
-        ).view(-1, *[1]*(out.ndim - 1))
+        diffusion = self.sde.diffusion(None,t).view(-1, *[1]*(out.ndim - 1))
 
         out = out * diffusion
         return out
