@@ -45,9 +45,11 @@ def set_seed(seed):
 @click.option('--batch_size', type=int)
 @click.option('--hidden_dim', type=int)
 @click.option('--epochs', type=int)
-@click.option('--forward_opt_steps', type=int)
-@click.option('--backward_opt_steps', type=int)
-@click.option('--redo', is_flag=True)
+@click.option('--sde',type=click.Choice(['vp','cld', 'linear-sb','linear-momentum-sb']), default='vp')
+@click.option('--dsm_warm_up', type=int, default=500, help='Perform first iterations using just DSM')
+@click.option('--dsm_cool_down', type=int, default=500, help='Stop optimizing the forward model for these last iterations')
+@click.option('--forward_opt_steps', type=int, default=5, help='Number of forward opt steps in alternate training scheme')
+@click.option('--backward_opt_steps', type=int, default=495, help='Number of backward opt steps in alternate training scheme')
 def main(**opt):
     opt = dotdict(opt)
     print(opt)
@@ -82,11 +84,11 @@ def main(**opt):
 
     dataset_train = train_grouper(dataset.train)
     dataset_test = test_grouper(dataset.test)
-    print('Num test dates', int(len(dataset.test) / len(dataset.train)))
+    # print('Num test dates', int(len(dataset.test) / len(dataset.train)))
     
-    for x in dataset_test:
-        print(x.keys())
-        print(x['target'].shape)
+    # for x in dataset_test:
+    #     print(x.keys())
+    #     print(x['target'].shape)
     # i = 0
     # for batch in dataset_train:
     #     # print(i)
@@ -103,6 +105,9 @@ def main(**opt):
         prediction_length=dataset.metadata.prediction_length,
         context_length=dataset.metadata.prediction_length * 3,
         batch_size=opt.batch_size,
+        sde=opt.sde,
+        dsm_warm_up=opt.dsm_warm_up,
+        dsm_cool_down=opt.dsm_cool_down,
         forward_opt_steps=opt.forward_opt_steps,
         backward_opt_steps=opt.backward_opt_steps,
         num_layers=2,
@@ -120,7 +125,7 @@ def main(**opt):
 
     predictor = estimator.train(dataset_train, cache_data=True, shuffle_buffer_length=1024)
 
-    if prefix == 'sb':
+    if opt.sde not in ['vp','cld']:
         A = predictor.prediction_net.model.forward_net.detach().cpu().numpy()
         np.save(dir / 'forward_matrix.npy', A)
 

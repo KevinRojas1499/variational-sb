@@ -12,6 +12,9 @@ class DiffusionLightningModule(pl.LightningModule):
     @validated()
     def __init__(
         self,
+        sde : str,
+        dsm_warm_up : int,
+        dsm_cool_down : int,
         forward_opt_steps: Union[int, float],
         backward_opt_steps: Union[int, float],
         model_kwargs: dict,
@@ -22,8 +25,13 @@ class DiffusionLightningModule(pl.LightningModule):
         super().__init__()
         self.automatic_optimization = False
         self.save_hyperparameters()
-        self.model = DiffusionModel(**model_kwargs)
+        self.model = DiffusionModel(sde=sde,dsm_warm_up=dsm_warm_up,
+                                    dsm_cool_down=dsm_cool_down,forward_opt_steps=forward_opt_steps,
+                                    backward_opt_steps=backward_opt_steps,**model_kwargs)
 
+        self.sde = sde  
+        self.dsm_warm_up = dsm_warm_up  
+        self.dsm_cool_down = dsm_cool_down  
         self.forward_opt_steps = forward_opt_steps
         self.backward_opt_steps = backward_opt_steps
         self.lr = lr
@@ -53,32 +61,12 @@ class DiffusionLightningModule(pl.LightningModule):
             future_target=batch["future_target"],
             step=self.step,
         ).mean()
-        
         self.step += 1
-
-        if self.direction == 'forward':
-            self.log('train_loss_forward', train_loss, prog_bar=True)
-
-            self.manual_backward(train_loss)
-            self.clip_gradients(f_opt, gradient_clip_val=10, gradient_clip_algorithm="norm")
-            f_opt.step()
-
-            if self.step > self.forward_opt_steps and self.backward_opt_steps > 0:
-                print('============================\nSWITCH TO BACKWARD TRAINING')
-                self.direction = 'backward'
-                self.step = 0
-
-        elif self.direction == 'backward':
-            self.log('train_loss', train_loss, prog_bar=True)
-
-            self.manual_backward(train_loss)
-            self.clip_gradients(b_opt, gradient_clip_val=10, gradient_clip_algorithm="norm")
-            b_opt.step()
-
-            if self.step > self.backward_opt_steps and self.forward_opt_steps > 0:
-                print('===========================\nSWITCH TO FORWARD TRAINING')
-                self.direction = 'forward'
-                self.step = 0
+        train_loss.backward()
+        self.clip_gradients(f_opt, gradient_clip_val=10, gradient_clip_algorithm="norm")
+        
+        f_opt.step()
+        b_opt.step()
 
         return train_loss
 

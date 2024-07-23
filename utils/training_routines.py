@@ -140,11 +140,10 @@ class EvalLossRoutine():
         return self.loss_fn(self.sde, data,cond)
 
 def get_routine(sde, sampling_sde, opts):
-    if opts.loss_routine == 'alternate':
-        return AlternateTrainingRoutine(sde,sampling_sde,opts.refresh_rate,100)
-    elif opts.loss_routine == 'variational':
+    print(sde)
+    if isinstance(sde,(SDEs.VP, SDEs.CLD)):
+        return EvalLossRoutine(sde=sde, loss_fn=losses.get_loss(opts.sde, is_alternate_training=False))
+    else:
         return VariationalDiffusionTrainingRoutine(sde,sampling_sde,
                                                       opts.dsm_warm_up,opts.num_iters-opts.dsm_warm_up - opts.dsm_cool_down, opts.dsm_cool_down,
                                                       opts.forward_opt_steps, opts.backward_opt_steps,100)
-    else:
-        return EvalLossRoutine(sde=sde, loss_fn=losses.get_loss(opts.sde, is_alternate_training=False))

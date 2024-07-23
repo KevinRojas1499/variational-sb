@@ -77,9 +77,8 @@ def default_log_rate(ctx, param, value):
 @click.option('--model_backward',type=click.Choice(['mlp','unet', 'linear','time-series']), default='mlp')
 @click.option('--precondition', is_flag=True, default=True)
 @click.option('--sde',type=click.Choice(['vp','cld','sb','edm', 'linear-sb','momentum-sb','linear-momentum-sb']), default='vp')
-@click.option('--loss_routine', type=click.Choice(['joint','alternate','variational','none']),default='none')
 @click.option('--dsm_warm_up', type=int, default=2000, help='Perform first iterations using just DSM')
-@click.option('--dsm_cool_down', type=int, default=5000, help='Perform last iterations using just DSM')
+@click.option('--dsm_cool_down', type=int, default=5000, help='Stop optimizing the forward model for these last iterations')
 @click.option('--forward_opt_steps', type=int, default=5, help='Number of forward opt steps in alternate training scheme')
 @click.option('--backward_opt_steps', type=int, default=495, help='Number of backward opt steps in alternate training scheme')
 # Training Options
@@ -166,8 +165,8 @@ def training(**opts):
         update_ema(model_backward, ema_backward, opts.ema_beta)
         if is_sb:
             update_ema(model_forward,  ema_forward, opts.ema_beta)
-        if opts.loss_routine == 'variational':
-            copy_ema_to_model(model_forward, ema_forward)
+        # if isinstance(routine, Variational):
+        #     copy_ema_to_model(model_forward, ema_forward)
         
         if enable_wandb:
             wandb.log({

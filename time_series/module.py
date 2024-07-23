@@ -2,9 +2,8 @@ from typing import List, Optional, Tuple
 
 import torch
 from torch import nn, Tensor
-import torch.nn.functional as F
 
-import numpy as np
+from tqdm import tqdm
 from gluonts.core.component import validated
 from gluonts.itertools import prod
 from gluonts.model import Input, InputSpec
@@ -17,7 +16,6 @@ from pts.util import lagged_sequence_values
 
 from epsilon_theta import EpsilonTheta
 
-import matplotlib.pyplot as plt
 # script.py
 import sys
 import os
@@ -81,6 +79,11 @@ class DiffusionModel(nn.Module):
     @validated()
     def __init__(
         self,
+        sde : str,
+        dsm_warm_up : int,
+        dsm_cool_down : int,
+        forward_opt_steps: int,
+        backward_opt_steps: int,
         freq: str,
         context_length: int,
         prediction_length: int,
@@ -152,8 +155,7 @@ class DiffusionModel(nn.Module):
             batch_first=True,
         )
         
-        # self.sde = SDEs.LinearSchrodingerBridge(forward_model=self.forward_net,backward_model=self.backward_net)
-        self.sde = SDEs.CLD()
+        self.sde = SDEs.get_sde(sde)
         
         self.backward_net = EpsilonTheta(
             in_channels=2 if self.sde.is_augmented else 1,
@@ -164,14 +166,16 @@ class DiffusionModel(nn.Module):
         self.forward_net = MatrixTimeEmbedding([1,input_size]) # TODO: Verify that this is correct
 
         self.sde.backward_score = self.backward_net
-        
+        if hasattr(self.sde,'forward_score'):
+            print('Found atribute :V')
+            self.sde.forward_score = self.forward_net
         self.routine = get_routine(self.sde,self.sde,dotdict({
-            'loss_routine': 'none',
-            'dsm_warm_up': 2500,
-            'num_iters' : 2500,
-            'dsm_cool_down': 1000,
-            'backward_opt_steps': 500,
-            'forward_opt_steps': 5
+            'sde': sde,
+            'dsm_warm_up': dsm_warm_up,
+            'num_iters' : 2500, # TODO : Not hardcode this value, it is given under the assumption of 50 epochs
+            'dsm_cool_down': dsm_cool_down,
+            'backward_opt_steps': backward_opt_steps,
+            'forward_opt_steps': forward_opt_steps
         }))
 
     def describe_inputs(self, batch_size=1) -> InputSpec:
@@ -410,11 +414,10 @@ class DiffusionModel(nn.Module):
         next_sample = self.sde.sample(shape=sampling_shape,
                 device=repeated_past_target[:, -1:, ...].device,
             cond=repeated_outputs[:, -1:, ...])[0]
-        print(f'Next sample has shape {next_sample.shape}')
         
         future_samples = [repeated_scale * next_sample + repeated_loc]
 
-        for k in range(1, self.prediction_length):
+        for k in tqdm(range(1, self.prediction_length)):
             next_features = torch.cat(
                 (repeated_static_feat, repeated_time_feat[:, k : k + 1]),
                 dim=-1,
@@ -433,7 +436,6 @@ class DiffusionModel(nn.Module):
             next_sample = self.sde.sample(shape=sampling_shape,
                 device=repeated_past_target[:, -1:, ...].device,
                 cond=repeated_outputs[:, -1:, ...])[0]
-            print(f'Next sample has shape {next_sample.shape}')
             future_samples.append(repeated_scale * next_sample + repeated_loc)
 
         future_samples_concat = torch.cat(future_samples, dim=1).reshape(
