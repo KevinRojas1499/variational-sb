@@ -14,7 +14,7 @@ def get_transformed_dataset(name, batch_size, num_batches_per_epoch):
     # TODO : Can I figure out this warning
     warnings.filterwarnings(action='ignore', category=FutureWarning, message=r".*Use a DatetimeIndex.*")
     dataset = get_dataset(name)
-    data_dim = 2 # dataset.metadata.feat_static_cat[0].cardinality
+    data_dim = dataset.metadata.feat_static_cat[0].cardinality
 
 
     train_grouper = MultivariateGrouper(max_target_dim=data_dim)
@@ -26,7 +26,7 @@ def get_transformed_dataset(name, batch_size, num_batches_per_epoch):
     test_ds = test_grouper(dataset.test)
 
     # Define the transformation
-    prediction_length = 3
+    prediction_length = 1
     true_pred_length = dataset.metadata.prediction_length
     context_length = dataset.metadata.prediction_length * 3
     metadata = {'dim' :  int(data_dim),
@@ -78,11 +78,13 @@ def get_transformed_dataset(name, batch_size, num_batches_per_epoch):
 
 
 class TimeSeriesDataset(MyDataset):
-    def __init__(self,name, batch_size, num_batches_per_epoch):
+    def __init__(self,name, batch_size, num_batches_per_epoch, normalize=True):
         super().__init__()
         train_loader, test_loader, self.metadata = get_transformed_dataset(name, batch_size, num_batches_per_epoch)
         self.train_loader = cycle(iter(train_loader))
         self.test_loader = cycle(iter(test_loader))
+        self.normalize = normalize
+        
     @property
     def out_shape(self):
         return [self.metadata['pred_length'], self.metadata['dim']]
@@ -92,4 +94,20 @@ class TimeSeriesDataset(MyDataset):
     
     def __next__(self, train=True):
         batch = next(self.train_loader) if train else next(self.test_loader)
-        return batch['future_target'], batch['past_target'] 
+        future, past = batch['future_target'], batch['past_target'] 
+        # print('BEFORE')
+        # print(f'Past ------- Min : {past.min().item()  : .3f} Max : {past.max().item() : .3f}')
+        # print(f'Futu ------- Min : {past.min().item()  : .3f} Max : {past.max().item() : .3f}')
+        
+        if self.normalize:
+        # First we scale y
+            mean = past.mean(dim=1,keepdim=True)
+            std = past.std(dim=1,keepdim=True)
+            # print(mean.shape, std.shape)
+            past = (past - mean)/(std + 1e-9)
+            future = (future - mean)/(std + 1e-9)
+        # print('AFTER')
+        # print(f'Past ------- Min : {past.min().item()  : .3f} Max : {past.max().item() : .3f}')
+        # print(f'Futu ------- Min : {past.min().item()  : .3f} Max : {past.max().item() : .3f}')
+        
+        return future, past

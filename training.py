@@ -72,10 +72,10 @@ def default_log_rate(ctx, param, value):
     return 2000 if is_sb_sde(sde) else 2000
 
 @click.command()
-@click.option('--dataset',type=click.Choice(['mnist','spiral','checkerboard','exchange_rate']))
+@click.option('--dataset',type=click.Choice(['mnist','spiral','checkerboard','exchange_rate','electricity_nips']))
 @click.option('--model_forward',type=click.Choice(['mlp','linear']), default='mlp')
 @click.option('--model_backward',type=click.Choice(['mlp','unet', 'linear','time-series']), default='mlp')
-@click.option('--precondition', is_flag=True, default=False)
+@click.option('--precondition', is_flag=True, default=True)
 @click.option('--sde',type=click.Choice(['vp','cld','sb','edm', 'linear-sb','momentum-sb','linear-momentum-sb']), default='vp')
 @click.option('--loss_routine', type=click.Choice(['joint','alternate','variational','none']),default='none')
 @click.option('--dsm_warm_up', type=int, default=2000, help='Perform first iterations using just DSM')
@@ -92,11 +92,13 @@ def default_log_rate(ctx, param, value):
 @click.option('--num_iters',type=int,callback=default_num_iters)
 @click.option('--dir',type=str)
 @click.option('--load_from_ckpt', type=str)
+@click.option('--disable_wandb',is_flag=True,default=False)
 def training(**opts):
     opts = dotdict(opts)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(opts)
     print(device)
+    enable_wandb = not opts.disable_wandb
     dataset = get_dataset(opts)
     dataset_type = get_dataset_type(opts.dataset)
     is_sb = is_sb_sde(opts.sde)
@@ -105,7 +107,7 @@ def training(**opts):
     # Set up backwards model
     network_opts = dotdict({
         'out_shape' : dataset.out_shape,
-        'cond_length' : 90
+        'cond_length' : dataset.metadata['cond_length']
     })
     model_backward, ema_backward = get_model(opts.model_backward,sde, device,network_opts=network_opts)
     sde.backward_score, sampling_sde.backward_score = model_backward, ema_backward
@@ -137,7 +139,8 @@ def training(**opts):
     log_sample_quality=opts.log_rate
     routine = get_routine(sde,sampling_sde,opts)
 
-    init_wandb(opts)
+    if enable_wandb:
+        init_wandb(opts)
     
     pbar = tqdm(range(start_iter, start_iter+opts.num_iters))
     for i in pbar:
@@ -166,9 +169,10 @@ def training(**opts):
         if opts.loss_routine == 'variational':
             copy_ema_to_model(model_forward, ema_forward)
         
-        wandb.log({
-            'loss': loss
-        })
+        if enable_wandb:
+            wandb.log({
+                'loss': loss
+            })
         # Evaluate sample accuracy
         if (i+1)%log_sample_quality == 0 or i+1 == num_iters:
             # Save Checkpoints
@@ -207,7 +211,8 @@ def create_diffusion_time_series_prediction(tot_pred_length, pred_size, past, sd
     prediction = torch.zeros(past.shape[0],pred_size * k,past.shape[-1], device=past.device)
     cur_past = past.detach().clone()
     for i in range(k):
-        prediction[:,pred_size * i:pred_size * (i+1)] = sde.sample((past.shape[0],pred_size, past.shape[-1]),past.device,cond=past)[0] 
+        new_samples = sde.sample((past.shape[0],pred_size, past.shape[-1]),past.device,cond=cur_past,n_time_pts=25)[0] 
+        prediction[:,pred_size * i:pred_size * (i+1)] = new_samples
         cur_past = torch.cat((cur_past[:,pred_size:],prediction[:,pred_size * i:pred_size * (i+1)]),dim=1)
     return prediction
 

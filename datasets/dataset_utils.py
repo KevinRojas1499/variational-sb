@@ -19,5 +19,7 @@ def get_dataset(opts) -> MyDataset:
         return cycle(data_loader)
     elif ds_name == 'exchange_rate':
         return TimeSeriesDataset(ds_name,batch_size,100)
+    elif ds_name == 'electricity_nips':
+        return TimeSeriesDataset(ds_name,batch_size,100)
     else:
         print('Dataset is not implemented')

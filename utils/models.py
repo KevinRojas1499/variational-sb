@@ -103,8 +103,48 @@ class SimpleNN(nn.Module):
         return out#.view(B,L,D)
 
 
+class TimestepEmbedder(nn.Module):
+    """
+    Embeds scalar timesteps into vector representations.
+    """
+    def __init__(self, hidden_size, frequency_embedding_size=256):
+        super().__init__()
+        self.mlp = nn.Sequential(
+            nn.Linear(frequency_embedding_size, hidden_size, bias=True),
+            nn.SiLU(),
+            nn.Linear(hidden_size, hidden_size, bias=True),
+        )
+        self.frequency_embedding_size = frequency_embedding_size
+
+    @staticmethod
+    def timestep_embedding(t, dim, max_period=10000):
+        """
+        Create sinusoidal timestep embeddings.
+        :param t: a 1-D Tensor of N indices, one per batch element.
+                          These may be fractional.
+        :param dim: the dimension of the output.
+        :param max_period: controls the minimum frequency of the embeddings.
+        :return: an (N, D) Tensor of positional embeddings.
+        """
+        # https://github.com/openai/glide-text2im/blob/main/glide_text2im/nn.py
+        half = dim // 2
+        freqs = torch.exp(
+            -math.log(max_period) * torch.arange(start=0, end=half, dtype=torch.float32, device=t.device) / half
+        ).to(device=t.device)
+        args = t[:, None].float() * freqs[None]
+        embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
+        if dim % 2:
+            embedding = torch.cat([embedding, torch.zeros_like(embedding[:, :1],device=t.device)], dim=-1)
+        return embedding
+
+    def forward(self, t):
+        t_freq = self.timestep_embedding(t, self.frequency_embedding_size)
+        t_emb = self.mlp(t_freq)
+        return t_emb
+    
+
 class ResidualBlock(nn.Module):
-    def __init__(self, hidden_size, in_channels, residual_channels, dilation):
+    def __init__(self, in_dim, hidden_size, in_channels, residual_channels, dilation):
         super().__init__()
         self.dilated_conv = nn.Conv1d(
             residual_channels,
@@ -117,7 +157,7 @@ class ResidualBlock(nn.Module):
         self.diffusion_projection = nn.Linear(hidden_size, residual_channels)
         self.conditioner_projection = nn.Sequential(nn.Conv1d(
             in_channels, 2 * residual_channels, 1, padding=2, padding_mode="circular"
-        ), nn.Linear(hidden_size+4,6))
+        ), nn.Linear(hidden_size+4,in_dim+4))
         self.output_projection = nn.Conv1d(residual_channels, 2 * residual_channels, 1)
 
     #     nn.init.kaiming_normal_(self.conditioner_projection.weight)
@@ -143,7 +183,7 @@ class ResidualBlock(nn.Module):
         return (x + residual) / math.sqrt(2.0), skip
 
 class TimeSeriesNetwork(nn.Module):
-    def __init__(self, input_dim, pred_length, cond_length, hidden_dim=64, 
+    def __init__(self, input_dim, pred_length, cond_length, hidden_dim=384, 
                  residual_channels=32,dilation_cycle_length=2, num_residual_layers=8):
         super(TimeSeriesNetwork, self).__init__()
         
@@ -152,27 +192,18 @@ class TimeSeriesNetwork(nn.Module):
             nn.Conv1d(pred_length, residual_channels, 1, padding=2, padding_mode="circular"),
             nn.SiLU())                        
         self.residual_blocks = nn.ModuleList(
-            [ResidualBlock(in_channels=cond_length,residual_channels=residual_channels,
+            [ResidualBlock(in_dim=input_dim, in_channels=cond_length,residual_channels=residual_channels,
                            dilation=2**(i%dilation_cycle_length),
                            hidden_size=hidden_dim)
                 for i in range(num_residual_layers)
              ]
         )
-        self.outtt = nn.Conv1d(residual_channels,pred_length,1)
-        self.out = nn.Sequential(
-            nn.Linear((input_dim + 4),128), # + 4 is coming from the padding in the convolutional layers
-                                 nn.SiLU(),
-                                 nn.Linear(128, input_dim))
+        self.out = nn.Sequential(nn.Conv1d(residual_channels,residual_channels,3),
+                                   nn.SiLU(),
+                                   nn.Conv1d(residual_channels,pred_length,3))
 
-        self.t_embedding =  nn.Sequential(
-            nn.Linear(1,128),
-            nn.SiLU(),
-            nn.Linear(128,256),
-            nn.SiLU(),
-            nn.Linear(256,128),
-            nn.SiLU(),
-            nn.Linear(128,hidden_dim)
-        )
+
+        self.t_embedding =  TimestepEmbedder(hidden_dim)
 
     def forward(self, x, t, cond):
         # x    : [B, pred_length, D]
@@ -183,9 +214,7 @@ class TimeSeriesNetwork(nn.Module):
         x = self.input_projection(x) # Encode input
         
         # Encode time TODO : Do better encoding
-        t = t.view(-1,1)
         t_embedded = self.t_embedding(t)  # shape: [B, t_embedding_dim]
-        
         #Encode condition
         out, (hn, cn) = self.cond_encoder(cond)
         encoded_cond = out
@@ -194,6 +223,5 @@ class TimeSeriesNetwork(nn.Module):
             x, skip_connection = layer(x, encoded_cond, t_embedded)
             skip.append(skip_connection)
         x = torch.sum(torch.stack(skip), dim=0) / math.sqrt(len(skip))
-        x = self.outtt(x)
         x = self.out(x)
         return x
