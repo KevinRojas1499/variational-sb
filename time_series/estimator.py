@@ -124,18 +124,10 @@ class DiffusionEstimator(PyTorchLightningEstimator):
     @validated()
     def __init__(
         self,
-        ddpm_baseline: bool,
         freq: str,
         prediction_length: int,
         input_size: int = 1,
         context_length: Optional[int] = None,
-        t0: float = None,
-        T: float = None,
-        beta_min: float = None,
-        beta_max: float = None,
-        beta_r: float = None,
-        n_timestep: int = None,
-        loss: str = "mse",
         num_layers: int = 2,
         hidden_size: int = 40,
         lr: float = 1e-3,
@@ -168,7 +160,6 @@ class DiffusionEstimator(PyTorchLightningEstimator):
             default_trainer_kwargs.update(trainer_kwargs)
         super().__init__(trainer_kwargs=default_trainer_kwargs)
 
-        self.ddpm_baseline = ddpm_baseline
 
         self.freq = freq
         self.prediction_length = prediction_length
@@ -176,21 +167,9 @@ class DiffusionEstimator(PyTorchLightningEstimator):
         self.context_length = (
             context_length if context_length is not None else prediction_length
         )
-        self.n_timestep = n_timestep
-        self.loss = loss
 
-        self.t0 = t0
-        self.T = T
-        self.beta_min = beta_min
-        self.beta_max = beta_max
-        self.beta_r = beta_r
-
-        if ddpm_baseline:
-            self.forward_opt_steps = 0
-            self.backward_opt_steps = float('inf')
-        else:
-            self.forward_opt_steps = forward_opt_steps
-            self.backward_opt_steps = backward_opt_steps
+        self.forward_opt_steps = forward_opt_steps
+        self.backward_opt_steps = backward_opt_steps
 
         self.patience = patience
         self.num_layers = num_layers
@@ -374,18 +353,10 @@ class DiffusionEstimator(PyTorchLightningEstimator):
             weight_decay=self.weight_decay,
             patience=self.patience,
             model_kwargs={
-                "ddpm_baseline": self.ddpm_baseline,
                 "freq": self.freq,
                 "context_length": self.context_length,
                 "prediction_length": self.prediction_length,
                 "input_size": self.input_size,
-                "t0": self.t0,
-                "T": self.T,
-                "beta_min": self.beta_min,
-                "beta_max": self.beta_max,
-                "beta_r": self.beta_r,
-                "n_timestep": self.n_timestep,
-                "loss": self.loss,
                 "num_feat_dynamic_real": (
                     1 + self.num_feat_dynamic_real + len(self.time_features)
                 ),

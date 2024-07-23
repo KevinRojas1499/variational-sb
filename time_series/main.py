@@ -35,19 +35,11 @@ def set_seed(seed):
     torch.backends.cudnn.benchmark = True
 
 @click.command()
-@click.option('--data', type=click.Option(list(dataset_recipes.keys())))
+@click.option('--data', type=click.Choice(list(set(dataset_recipes.keys()))))
 @click.option('--seed', type=int, default=0)
 @click.option('--cpu', is_flag=True)
 @click.option('--device', type=int, default=0)
 @click.option('--max_data_dim', type=int, default=2000)
-
-# Diffusion params
-@click.option('--t0', type=float, required=False)
-@click.option('--T', type=float, required=False)
-@click.option('--beta_min', type=float, required=False)
-@click.option('--beta_max', type=float, required=False)
-@click.option('--beta_r', type=float, required=False)
-@click.option('--steps', type=int, required=False)
 
 # Training params
 @click.option('--batch_size', type=int)
@@ -106,18 +98,11 @@ def main(**opt):
     #         break
 
     estimator = DiffusionEstimator(
-        ddpm_baseline=opt.ddpm,
         freq=dataset.metadata.freq,
         input_size=opt.data_dim,
         prediction_length=dataset.metadata.prediction_length,
         context_length=dataset.metadata.prediction_length * 3,
         batch_size=opt.batch_size,
-        t0=opt.t0,
-        T=opt.T,
-        beta_min=opt.beta_min,
-        beta_max=opt.beta_max,
-        beta_r=opt.beta_r,
-        n_timestep=opt.steps,
         forward_opt_steps=opt.forward_opt_steps,
         backward_opt_steps=opt.backward_opt_steps,
         num_layers=2,
@@ -136,7 +121,7 @@ def main(**opt):
     predictor = estimator.train(dataset_train, cache_data=True, shuffle_buffer_length=1024)
 
     if prefix == 'sb':
-        A = predictor.prediction_net.model.forward_net.A.detach().cpu().numpy()
+        A = predictor.prediction_net.model.forward_net.detach().cpu().numpy()
         np.save(dir / 'forward_matrix.npy', A)
 
     forecast_it, ts_it = make_evaluation_predictions(

@@ -81,18 +81,10 @@ class DiffusionModel(nn.Module):
     @validated()
     def __init__(
         self,
-        ddpm_baseline: bool,
         freq: str,
         context_length: int,
         prediction_length: int,
         n_timestep: int = 150,
-        log_count: int = 10,
-        t0: float = None,
-        T: float = None,
-        beta_min: float = None,
-        beta_max: float = None,
-        beta_r: float = None,
-        loss: str = "mse",
         input_size: int = 1,
         num_feat_dynamic_real: int = 1,
         num_feat_static_real: int = 1,
@@ -108,7 +100,6 @@ class DiffusionModel(nn.Module):
         num_parallel_samples: int = 100,
     ) -> None:
         super().__init__()
-        self.ddpm_baseline = ddpm_baseline
 
         assert num_feat_dynamic_real > 0
         assert num_feat_static_real > 0
@@ -118,12 +109,6 @@ class DiffusionModel(nn.Module):
             embedding_dimension is None
             or len(embedding_dimension) == num_feat_static_cat
         )
-
-        self.t0 = t0
-        self.T = T
-        self.beta_min = beta_min
-        self.beta_max = beta_max
-        self.beta_r = beta_r
 
         self.context_length = context_length
         self.prediction_length = prediction_length
