@@ -16,7 +16,6 @@ from pts.util import lagged_sequence_values
 
 
 from epsilon_theta import EpsilonTheta
-from linear_policy import LinearPolicy
 
 import matplotlib.pyplot as plt
 # script.py
@@ -30,6 +29,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.training_routines import EvalLossRoutine
 import utils.sde_lib as SDEs
 from utils.losses import dsm_loss
+from utils.models import MatrixTimeEmbedding
 
 class DiffusionModel(nn.Module):
     """
@@ -180,14 +180,7 @@ class DiffusionModel(nn.Module):
         print('NUM PARAMS FORWARD')
         print(sum(m.numel() for m in self.backward_net.parameters())//1e3, 'K')
         print(input_size, hidden_size, self.n_timestep)
-        self.forward_net = LinearPolicy(
-            data_dim=input_size,
-            beta_min=self.beta_min,
-            beta_max=self.beta_max,
-            beta_r=self.beta_r,
-            interval=self.n_timestep,
-        )
-
+        self.forward_net = MatrixTimeEmbedding([1,input_size]) # TODO: Verify that this is correct
         self.sde = SDEs.VP(model_backward=self.backward_net)
 
 
