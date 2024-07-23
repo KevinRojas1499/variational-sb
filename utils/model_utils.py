@@ -3,7 +3,7 @@ import torch
 
 
 from utils.sde_lib import SDE, VP, CLD
-from utils.models import MLP, MatrixTimeEmbedding, TimeSeriesNetwork
+from utils.models import MLP, MatrixTimeEmbedding
 from utils.misc import batch_matrix_product
 from utils.unet import ScoreNet
 from utils.DiT import TimeSeriesDiT
@@ -17,18 +17,6 @@ class PrecondVP(nn.Module):
     def forward(self, xt,t,cond=None):
         ones = [1] * (len(xt.shape)-1)
         return self.net(xt,t,cond)/self.sde.marginal_prob_std(t).view(-1,*ones)
-
-class TimeSeriesPrecond(nn.Module):
-    def __init__(self, net, sde : VP) -> None:
-        super().__init__()
-        self.net = net
-        self.sde = sde
-        
-    def forward(self, xt,t,cond=None):
-        ones = [1] * (len(xt.shape)-1)
-        prev = cond[:,-1:]
-        mean, std = self.sde.marginal_prob(prev + self.net(xt,t,cond),t.view(-1,*ones))
-        return -(xt - mean) /std
 
 class PrecondCLD(nn.Module):
     def __init__(self, net, sde : CLD) -> None:
@@ -77,10 +65,6 @@ def get_model(name, sde : SDE, device, network_opts=None):
         cond_len = network_opts.cond_length
         return TimeSeriesDiT(input_size=dim,in_channels=pred_len,cond_channels=cond_len,hidden_size=384,depth=12).requires_grad_(True).to(device=device), \
             TimeSeriesDiT(input_size=dim,in_channels=pred_len,cond_channels=cond_len,hidden_size=384,depth=12).requires_grad_(False).to(device=device)
-    # elif name == 'time-series':
-    #     pred_len, dim = network_opts.out_shape
-    #     return TimeSeriesNetwork(input_dim=dim, pred_length=pred_len,cond_length=network_opts.cond_length).requires_grad_(True).to(device=device), \
-    #         TimeSeriesNetwork(input_dim=dim, pred_length=pred_len,cond_length=network_opts.cond_length).requires_grad_(False).to(device=device)
 
 def get_preconditioned_model(model, sde):
     if isinstance(sde, VP):
