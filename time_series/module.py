@@ -166,16 +166,23 @@ class DiffusionModel(nn.Module):
             dropout=dropout_rate,
             batch_first=True,
         )
+        
+        # self.sde = SDEs.LinearSchrodingerBridge(forward_model=self.forward_net,backward_model=self.backward_net)
+        self.sde = SDEs.CLD()
+        
         self.backward_net = EpsilonTheta(
+            in_channels=2 if self.sde.is_augmented else 1,
             target_dim=input_size,
             cond_dim=hidden_size,
             interval=self.n_timestep,
         )
         self.forward_net = MatrixTimeEmbedding([1,input_size]) # TODO: Verify that this is correct
-        self.sde = SDEs.LinearSchrodingerBridge(forward_model=self.forward_net,backward_model=self.backward_net)
+
+        self.sde.backward_score = self.backward_net
+        
         self.routine = get_routine(self.sde,self.sde,dotdict({
-            'loss_routine': 'variational',
-            'dsm_warm_up': 0,
+            'loss_routine': 'none',
+            'dsm_warm_up': 2500,
             'num_iters' : 2500,
             'dsm_cool_down': 1000,
             'backward_opt_steps': 500,
@@ -414,7 +421,8 @@ class DiffusionModel(nn.Module):
         )
 
         # sample
-        next_sample = self.sde.sample(shape=repeated_past_target[:, -1:, ...].shape,
+        sampling_shape = [repeated_past_target.shape[0], 2 if self.sde.is_augmented else 1, repeated_past_target.shape[-1]]
+        next_sample = self.sde.sample(shape=sampling_shape,
                 device=repeated_past_target[:, -1:, ...].device,
             cond=repeated_outputs[:, -1:, ...])[0]
         print(f'Next sample has shape {next_sample.shape}')
@@ -437,7 +445,7 @@ class DiffusionModel(nn.Module):
                 (repeated_past_target, next_sample), dim=1
             )
 
-            next_sample = self.sde.sample(shape=repeated_past_target[:, -1:, ...].shape,
+            next_sample = self.sde.sample(shape=sampling_shape,
                 device=repeated_past_target[:, -1:, ...].device,
                 cond=repeated_outputs[:, -1:, ...])[0]
             print(f'Next sample has shape {next_sample.shape}')

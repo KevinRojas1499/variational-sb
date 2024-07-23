@@ -1,12 +1,9 @@
-import argparse
+import click
 import json
 import pickle
 import random
 import torch
 import numpy as np
-from pathlib import Path
-ROOT_DIR = Path(__file__).resolve().parent / 'results'
-
 from lightning.pytorch.loggers import CSVLogger
 from lightning.pytorch.callbacks import ModelCheckpoint
 
@@ -17,6 +14,19 @@ from gluonts.evaluation import MultivariateEvaluator
 
 from estimator import DiffusionEstimator
 
+import sys
+import os
+
+# Add the parent directory to the sys.path to ensure it can find hello.py
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+from utils.misc import dotdict
+
+from pathlib import Path
+ROOT_DIR = Path(__file__).resolve().parent / 'results'
+
+
 def set_seed(seed):
     random.seed(seed)
     np.random.seed(seed)
@@ -24,7 +34,30 @@ def set_seed(seed):
     torch.backends.cudnn.enabled = True
     torch.backends.cudnn.benchmark = True
 
-def main(opt):
+@click.command()
+@click.option('--data', type=click.Option(list(dataset_recipes.keys())))
+@click.option('--seed', type=int, default=0)
+@click.option('--cpu', is_flag=True)
+@click.option('--device', type=int, default=0)
+@click.option('--max_data_dim', type=int, default=2000)
+
+# Diffusion params
+@click.option('--t0', type=float, required=False)
+@click.option('--T', type=float, required=False)
+@click.option('--beta_min', type=float, required=False)
+@click.option('--beta_max', type=float, required=False)
+@click.option('--beta_r', type=float, required=False)
+@click.option('--steps', type=int, required=False)
+
+# Training params
+@click.option('--batch_size', type=int)
+@click.option('--hidden_dim', type=int)
+@click.option('--epochs', type=int)
+@click.option('--forward_opt_steps', type=int)
+@click.option('--backward_opt_steps', type=int)
+@click.option('--redo', is_flag=True)
+def main(**opt):
+    opt = dotdict(opt)
     print(opt)
     set_seed(opt.seed)
 
@@ -39,7 +72,7 @@ def main(opt):
     dir = ROOT_DIR / name
     dir.mkdir(exist_ok=True, parents=True)
 
-    if (dir / 'forecasts.pickle').exists() and not opt.redo:
+    if (dir / 'forecasts.pickle').exists():
         print(f'Experiment {name} already exists. Skipping...')
         return
 
@@ -125,7 +158,7 @@ def main(opt):
         forecast_entry = forecasts[i].samples
         
         print(ts_entry.shape)
-        print("Shape")
+        print('Shape')
         print(forecast_entry.shape)
         plt.clf()
         k = forecast_entry.shape[1]
@@ -135,20 +168,20 @@ def main(opt):
         plt.savefig(f'./results/{i}.png')
     
     evaluator = MultivariateEvaluator(
-        quantiles=(np.arange(20) / 20.0)[1:], target_agg_funcs={"sum": np.sum}
+        quantiles=(np.arange(20) / 20.0)[1:], target_agg_funcs={'sum': np.sum}
     )
     agg_metric, _ = evaluator(targets, forecasts, num_series=len(dataset_test))
 
 
     summary_metrics = {
-        'CRPS': agg_metric["mean_wQuantileLoss"],
-        'ND': agg_metric["ND"],
-        'NRMSE': agg_metric["NRMSE"],
-        'MSE': agg_metric["MSE"],
-        'CRPS-Sum': agg_metric["m_sum_mean_wQuantileLoss"],
-        'ND-Sum': agg_metric["m_sum_ND"],
-        'NRMSE-Sum': agg_metric["m_sum_NRMSE"],
-        'MSE-Sum': agg_metric["m_sum_MSE"],
+        'CRPS': agg_metric['mean_wQuantileLoss'],
+        'ND': agg_metric['ND'],
+        'NRMSE': agg_metric['NRMSE'],
+        'MSE': agg_metric['MSE'],
+        'CRPS-Sum': agg_metric['m_sum_mean_wQuantileLoss'],
+        'ND-Sum': agg_metric['m_sum_ND'],
+        'NRMSE-Sum': agg_metric['m_sum_NRMSE'],
+        'MSE-Sum': agg_metric['m_sum_MSE'],
     }
 
     print(summary_metrics)
@@ -161,30 +194,4 @@ def main(opt):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--data", type=str, choices=list(dataset_recipes.keys()))
-    parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--cpu", action="store_true")
-    parser.add_argument("--device", type=int, default=0)
-    parser.add_argument("--max_data_dim", type=int, default=2000)
-
-    # Diffusion params
-    parser.add_argument("--t0", type=float, required=False)
-    parser.add_argument("--T", type=float, required=False)
-    parser.add_argument("--beta_min", type=float, required=False)
-    parser.add_argument("--beta_max", type=float, required=False)
-    parser.add_argument("--beta_r", type=float, required=False)
-    parser.add_argument("--steps", type=int, required=False)
-
-    # Training params
-    parser.add_argument("--batch_size", type=int)
-    parser.add_argument("--hidden_dim", type=int)
-    parser.add_argument("--epochs", type=int)
-    parser.add_argument("--forward_opt_steps", type=int)
-    parser.add_argument("--backward_opt_steps", type=int)
-    parser.add_argument("--ddpm", action='store_true')
-    parser.add_argument("--redo", action='store_true')
-
-    opt = parser.parse_args()
-    print('Options', opt)
-    main(opt)
+    main()

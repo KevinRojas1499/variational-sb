@@ -72,9 +72,9 @@ class SDE(abc.ABC):
     return xt, (trajectories if return_traj else None)
 class LinearSDE(SDE):
   
-  def __init__(self, backward_score, is_augmented):
+  def __init__(self, backward_model, is_augmented):
     SDE.__init__(self, is_augmented)
-    self.backward_score = backward_score
+    self.backward_score = backward_model
     
   @abc.abstractmethod
   def marginal_prob(self, x, t):
@@ -83,7 +83,7 @@ class LinearSDE(SDE):
 class VP(LinearSDE):
 
   def __init__(self,T=1.,delta=1e-3, beta_max=10, model_backward=None):
-    LinearSDE.__init__(self,backward_score=model_backward,is_augmented=False)
+    LinearSDE.__init__(self,backward_model=model_backward,is_augmented=False)
     self._T = T
     self.delta = delta
     self.beta_max = beta_max
@@ -128,7 +128,7 @@ class VP(LinearSDE):
 class EDM(LinearSDE):
 
   def __init__(self,T=80.,delta=1e-3, model_backward=None):
-    super().__init__(backward_score=model_backward, is_augmented=False)
+    super().__init__(backward_model=model_backward, is_augmented=False)
     self._T = T
     self.delta = delta
 
@@ -171,13 +171,13 @@ class SchrodingerBridge(SDE):
     Note that this is not a general SB, it is implemented so that after optimized
     the linear drift transports to a standard normal, it also only works for f(Xt,t) = -.5 bt Xt
   """
-  def __init__(self, T=1.,delta=1e-3, beta_max=10, forward_score=None, backward_score=None, is_augmented=False):
+  def __init__(self, T=1.,delta=1e-3, beta_max=10, forward_score=None, backward_model=None, is_augmented=False):
     SDE.__init__(self,is_augmented=is_augmented)
     self._T = T
     self.delta = delta
     self.beta_max = beta_max
     self.forward_score = forward_score
-    self.backward_score = backward_score
+    self.backward_score = backward_model
 
   @property
   def T(self):
@@ -482,13 +482,13 @@ class LinearMomentumSchrodingerBridge(MomentumSchrodingerBridge, LinearSDE):
 class CLD(SDE):
   # We assume that images have shape [B, C, H, W] 
   # Additionally there has been added channels as momentum
-  def __init__(self,T=1.,delta=1e-3, gamma=2,beta_max=5., model_backward=None):
+  def __init__(self,T=1.,delta=1e-3, gamma=2,beta_max=5., backward_model=None):
     super().__init__(is_augmented=True)
     self._T = T
     self.delta = delta
     self.gamma = gamma
     self.beta_max = beta_max
-    self.backward_score = model_backward
+    self.backward_score = backward_model
 
   @property
   def T(self):

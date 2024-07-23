@@ -97,6 +97,7 @@ class EpsilonTheta(nn.Module):
         cond_dim,
         interval,
         time_emb_dim=16,
+        in_channels=1,
         residual_layers=8,
         residual_channels=8,
         dilation_cycle_length=2,
@@ -105,7 +106,7 @@ class EpsilonTheta(nn.Module):
         super().__init__()
         self.interval = interval
         self.input_projection = nn.Conv1d(
-            1, residual_channels, 1, padding=2, padding_mode="circular"
+            in_channels, residual_channels, 1, padding=2, padding_mode="circular"
         )
         self.diffusion_embedding = DiffusionEmbedding(
             proj_dim=residual_hidden
