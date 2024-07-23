@@ -26,10 +26,10 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
-from utils.training_routines import EvalLossRoutine
+from utils.training_routines import get_routine
 import utils.sde_lib as SDEs
-from utils.losses import dsm_loss
 from utils.models import MatrixTimeEmbedding
+from utils.misc import dotdict
 
 class DiffusionModel(nn.Module):
     """
@@ -121,7 +121,6 @@ class DiffusionModel(nn.Module):
 
         self.t0 = t0
         self.T = T
-        self.n_timestep = n_timestep
         self.beta_min = beta_min
         self.beta_max = beta_max
         self.beta_r = beta_r
@@ -131,8 +130,6 @@ class DiffusionModel(nn.Module):
         self.input_size = input_size
 
         self.n_timestep = n_timestep
-        self.log_count = log_count
-        self.loss_type = loss
 
         self.num_feat_dynamic_real = num_feat_dynamic_real
         self.num_feat_static_cat = num_feat_static_cat
@@ -169,20 +166,21 @@ class DiffusionModel(nn.Module):
             dropout=dropout_rate,
             batch_first=True,
         )
-        print("RECURRENT")
-        print(sum(m.numel() for m in self.rnn.parameters())//1e3, 'K')
-        print(self.rnn_input_size, hidden_size, num_layers, dropout_rate)
         self.backward_net = EpsilonTheta(
             target_dim=input_size,
             cond_dim=hidden_size,
             interval=self.n_timestep,
         )
-        print('NUM PARAMS FORWARD')
-        print(sum(m.numel() for m in self.backward_net.parameters())//1e3, 'K')
-        print(input_size, hidden_size, self.n_timestep)
         self.forward_net = MatrixTimeEmbedding([1,input_size]) # TODO: Verify that this is correct
-        self.sde = SDEs.VP(model_backward=self.backward_net)
-
+        self.sde = SDEs.LinearSchrodingerBridge(forward_model=self.forward_net,backward_model=self.backward_net)
+        self.routine = get_routine(self.sde,self.sde,dotdict({
+            'loss_routine': 'variational',
+            'dsm_warm_up': 0,
+            'num_iters' : 2500,
+            'dsm_cool_down': 1000,
+            'backward_opt_steps': 500,
+            'forward_opt_steps': 5
+        }))
 
     def describe_inputs(self, batch_size=1) -> InputSpec:
         return InputSpec(
@@ -456,9 +454,11 @@ class DiffusionModel(nn.Module):
         rnn_outputs: Tensor,
         target: Tensor,
         observed_values: Tensor,
-        direction: str,
+        step: int,
     ):
-        loss = dsm_loss(self.sde,target.reshape(-1,1,target.shape[-1]),rnn_outputs.reshape(-1,1,rnn_outputs.shape[-1]))
+        loss = self.routine.training_iteration(step,
+                data=target.reshape(-1,1,target.shape[-1]),
+                cond=rnn_outputs.reshape(-1,1,rnn_outputs.shape[-1]))
         return loss
 
     def loss(
@@ -473,16 +473,8 @@ class DiffusionModel(nn.Module):
         future_observed_values: torch.Tensor,
         future_only: bool = True,
         aggregate_by=torch.mean,
-        direction: str = None,
+        step: int = None,
     ) -> torch.Tensor:
-        # print('Past / Future')
-        # print(past_observed_values.shape, future_target.shape)
-        # idx = torch.arange(past_observed_values.shape[1] + future_target.shape[1])
-        # plt.plot(idx.numpy(),torch.cat((past_target,future_target),dim=1)[0,:,0].cpu().numpy())
-        # plt.plot(idx.numpy(),torch.cat((past_target,future_target),dim=1)[1,:,1].cpu().numpy())
-        # plt.plot(idx.numpy(),torch.cat((past_target,future_target),dim=1)[2,:,2].cpu().numpy())
-        # plt.legend(['1','2','3'])
-        # plt.show()
         extra_dims = len(future_target.shape) - len(past_target.shape)
         extra_shape = future_target.shape[:extra_dims]
 
@@ -510,10 +502,8 @@ class DiffusionModel(nn.Module):
             future_time_feat,
             future_target_reshaped,
         )
-        # print('RNN OUTPUTS')
-        # print(rnn_outputs.shape)
+        
         if future_only:
-            # print('Future only')
             sliced_rnn_outputs = rnn_outputs[:, -self.prediction_length :]
             observed_values = (
                 future_observed_reshaped.all(-1)
@@ -527,7 +517,7 @@ class DiffusionModel(nn.Module):
                 rnn_outputs=sliced_rnn_outputs,
                 target=future_target_reshaped,
                 observed_values=observed_values,
-                direction=direction,
+                step=step,
             )
         else:
             context_target = past_target[:, -self.context_length + 1 :, ...]
@@ -548,7 +538,7 @@ class DiffusionModel(nn.Module):
                 rnn_outputs=rnn_outputs,
                 target=target,
                 observed_values=observed_values,
-                direction=direction,
+                step=step,
             )
 
         return loss

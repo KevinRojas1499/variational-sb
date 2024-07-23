@@ -205,9 +205,9 @@ class SchrodingerBridge(SDE):
   def probability_flow_drift(self, xt, t, cond=None):
     beta = self.beta(t)
     return -.5 * beta * (xt - self.forward_score(xt,t,cond) \
-      + self.backward_score(xt, t))
+      + self.backward_score(xt, t,cond))
 
-  def get_trajectories_for_loss(self, in_cond, time_pts,forward=True):
+  def get_trajectories_for_loss(self, in_cond, time_pts,forward=True, cond=None):
     n_time_pts = time_pts.shape[0]
     
     xt = in_cond.detach().clone().requires_grad_(True)
@@ -222,7 +222,7 @@ class SchrodingerBridge(SDE):
       
       bt = self.beta(t)
       save_idx = i if forward else -(i+1)
-      policy = bt**.5 * cur_score(xt,t_shape) # g * fw_score
+      policy = bt**.5 * cur_score(xt,t_shape,cond) # g * fw_score
       policies[:,save_idx] = policy
       trajectories[:,save_idx] = xt
       

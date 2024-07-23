@@ -40,7 +40,6 @@ class DiffusionLightningModule(pl.LightningModule):
         return self.model(*args, **kwargs)
 
     def training_step(self, batch, batch_idx: int):
-        self.step += 1
 
         f_opt, b_opt = self.optimizers()
         f_lr, b_lr = self.lr_schedulers()
@@ -52,8 +51,10 @@ class DiffusionLightningModule(pl.LightningModule):
             **select(self.inputs, batch),
             future_observed_values=batch["future_observed_values"],
             future_target=batch["future_target"],
-            direction=self.direction,
+            step=self.step,
         ).mean()
+        
+        self.step += 1
 
         if self.direction == 'forward':
             self.log('train_loss_forward', train_loss, prog_bar=True)

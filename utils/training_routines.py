@@ -88,12 +88,12 @@ class VariationalDiffusionTrainingRoutine():
             return 'backward'
 
     @torch.no_grad()
-    def refresh_forward(self, data):
+    def refresh_forward(self, data,cond=None):
         self.time_pts = self.time_pts.to(device=data.device)
         if self.sb.is_augmented:
             data = losses.augment_data(data)
         in_cond = self.sb.prior_sampling((*data.shape,),device=data.device)
-        xt, trajectories, frozen_policy = self.sampling_sb.get_trajectories_for_loss(in_cond, self.time_pts,forward=False)
+        xt, trajectories, frozen_policy = self.sampling_sb.get_trajectories_for_loss(in_cond, self.time_pts,forward=False,cond=cond)
         self.trajectories = trajectories.detach_()
         self.frozen_policy = frozen_policy.detach_()      
         
@@ -111,6 +111,9 @@ class VariationalDiffusionTrainingRoutine():
     def training_iteration(self, itr, data,cond=None):
         prev_stage = self.get_training_stage(itr-1)
         stage = self.get_training_stage(itr)
+        if prev_stage != stage:
+            print('CHANGED STAGES')
+            print(prev_stage, stage)
         if stage == 'dsm':
             if itr == 0:
                 self.freeze_models(optimizing_forward=False)
@@ -126,7 +129,7 @@ class VariationalDiffusionTrainingRoutine():
             return losses.linear_sb_loss_given_params(self.sb,aug_data,self.loss_times[rand_idx],self.scales[rand_idx],self.stds[rand_idx],cond)
         elif stage == 'forward':
             if prev_stage != stage:
-                self.refresh_forward(data)
+                self.refresh_forward(data,cond)
             return losses.alternate_sb_loss(self.sb,self.trajectories,self.frozen_policy,self.time_pts,optimize_forward=True)
 class EvalLossRoutine():
     def __init__(self, sde, loss_fn):
