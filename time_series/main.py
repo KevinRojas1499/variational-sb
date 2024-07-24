@@ -96,37 +96,17 @@ def main(**opt):
 
     torch.save(predictor.prediction_net.model.backward_net.state_dict(), os.path.join(opt.dir,'backward_model.pt'))
     if opt.sde not in ['vp','cld']:
-        A = predictor.prediction_net.model.forward_net
-        torch.save(A.state_dict(), os.path.join(opt.dir,'forward_model.pt'))
+        torch.save(predictor.prediction_net.model.forward_net.state_dict(), os.path.join(opt.dir,'forward_model.pt'))
 
     forecast_it, ts_it = make_evaluation_predictions(
         dataset=dataset_test,
         predictor=predictor,
         num_samples=estimator.num_parallel_samples,
     )
-    print('We created some forecasts')
-    print(ts_it)
+
     forecasts = list(forecast_it)
     targets = list(ts_it)
-    print(len(targets))
-    import matplotlib.pyplot as plt
-    
 
-
-    for i in range(4):
-        ts_entry = targets[i].to_numpy()
-        forecast_entry = forecasts[i].samples
-        
-        print(ts_entry.shape)
-        print('Shape')
-        print(forecast_entry.shape)
-        plt.clf()
-        k = forecast_entry.shape[1]
-        plt.plot(np.arange(k),forecast_entry[0,:,0])
-        plt.plot(np.arange(k),ts_entry[-k:,0])
-        plt.legend(['forecast','true'])
-        plt.savefig(f'./results/{i}.png')
-    
     evaluator = MultivariateEvaluator(
         quantiles=(np.arange(20) / 20.0)[1:], target_agg_funcs={'sum': np.sum}
     )
@@ -149,6 +129,9 @@ def main(**opt):
     with open(os.path.join(opt.dir,'metrics.json'), 'w') as f:
         json.dump(agg_metric, f)
 
+    with open(os.path.join(opt.dir,'summary_metrics.json'), 'w') as f:
+        json.dump(summary_metrics, f)
+        
     with open(os.path.join(opt.dir, 'forecasts.pickle'), 'wb') as f:
         pickle.dump([forecasts, targets], f)
 
