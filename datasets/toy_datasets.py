@@ -20,10 +20,7 @@ class MyDataset(abc.ABC):
     @abc.abstractmethod
     def __next__(self):
         return 
-    
-
-    
-
+      
 class CheckerBoard(MyDataset):
     def __init__(self, batch_size, x_scalar=1.0, y_scalar=1.0):
         super(CheckerBoard, self).__init__()
@@ -84,7 +81,7 @@ class Spiral(MyDataset):
         x_a = data_a + 0.25*np.random.randn(n,2)
         samples = np.append(x_a, np.zeros((n,1)), axis=1)
         samples = samples[:,0:2]
-        samples[:, 0] = self.x_scalar * samples[:, 0]
-        samples[:, 1] = self.y_scalar * samples[:, 1]
+        samples[:, 0] = self.x_scalar * samples[:, 0] + 5
+        samples[:, 1] = self.y_scalar * samples[:, 1] + 5
         return torch.Tensor(samples)     
         

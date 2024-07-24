@@ -39,15 +39,10 @@ class MatrixTimeEmbedding(nn.Module):
             nn.Linear(256,128),
             nn.SiLU()
         )
-        self.out = nn.Linear(128, self.real_dim)
+        self.out = nn.Linear(128, self.real_dim,bias=False)
+        nn.init.zeros_(self.out.weight)
         
         
-        self.apply(self.zero_init)
-        
-    def zero_init(self, m):
-        if isinstance(m, torch.nn.Linear):
-            torch.nn.init.zeros_(m.weight)
-            torch.nn.init.zeros_(m.bias)
         
     def forward(self,t):
         t = t.flatten().unsqueeze(-1)

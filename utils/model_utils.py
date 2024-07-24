@@ -60,12 +60,7 @@ def get_model(name, sde : SDE, device, network_opts=None):
         model = torch.nn.DataParallel(ScoreNet(in_channels=2 if sde.is_augmented else 1))
         ema = torch.nn.DataParallel(ScoreNet(in_channels=2 if sde.is_augmented else 1))
         return model.requires_grad_(True).to(device=device), ema.requires_grad_(False).to(device=device) 
-    elif name == 'time-series':
-        pred_len, dim = network_opts.out_shape
-        cond_len = network_opts.cond_length
-        return TimeSeriesDiT(input_size=dim,in_channels=pred_len,cond_channels=cond_len,hidden_size=384,depth=12).requires_grad_(True).to(device=device), \
-            TimeSeriesDiT(input_size=dim,in_channels=pred_len,cond_channels=cond_len,hidden_size=384,depth=12).requires_grad_(False).to(device=device)
-
+    
 def get_preconditioned_model(model, sde):
     if isinstance(sde, VP):
         return PrecondVP(model,sde)

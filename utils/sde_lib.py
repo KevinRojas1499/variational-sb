@@ -463,7 +463,8 @@ class LinearMomentumSchrodingerBridge(MomentumSchrodingerBridge, LinearSDE):
     H_inv = ch_pair[:, :2, :2].mT
     cov = C @ H_inv
     L = torch.linalg.cholesky(cov)
-    return H_inv.mH.reshape((z.shape[0],z.shape[1]//2,*z.shape[2:],2,2)), L.reshape((z.shape[0],z.shape[1]//2,*z.shape[2:],2,2))
+    out_shape = (z.shape[0],z.shape[1]//2,*z.shape[2:],2,2)
+    return H_inv.mT.reshape(out_shape), L.reshape(out_shape)
   
   def marginal_prob(self, z, t):
     # If    x is of shape [B, H, W, C]

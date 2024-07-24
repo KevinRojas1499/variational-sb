@@ -45,8 +45,6 @@ def get_dataset_type(name):
         return 'toy'
     elif name in ['mnist']:
         return 'image'
-    else:
-        return 'time-series'
 
 def is_sb_sde(name):
     return (name in ['sb','linear-sb','momentum-sb','linear-momentum-sb'])
@@ -64,22 +62,22 @@ def default_num_iters(ctx, param, value):
     sde = ctx.params.get('sde')
     if value is not None: 
         return value
-    return 2000 if is_sb_sde(sde) else 10000
+    return 30000 if is_sb_sde(sde) else 30000
 def default_log_rate(ctx, param, value):
     sde = ctx.params.get('sde')
     if value is not None: 
         return value
-    return 2000 if is_sb_sde(sde) else 2000
+    return 5000 if is_sb_sde(sde) else 5000
 
 @click.command()
 @click.option('--dataset',type=click.Choice(['mnist','spiral','checkerboard']))
-@click.option('--model_forward',type=click.Choice(['mlp','linear']), default='mlp')
+@click.option('--model_forward',type=click.Choice(['linear']), default='linear')
 @click.option('--model_backward',type=click.Choice(['mlp','unet', 'linear']), default='mlp')
 @click.option('--precondition', is_flag=True, default=True)
 @click.option('--sde',type=click.Choice(['vp','cld','sb', 'linear-sb','momentum-sb','linear-momentum-sb']), default='vp')
 @click.option('--dsm_warm_up', type=int, default=2000, help='Perform first iterations using just DSM')
 @click.option('--dsm_cool_down', type=int, default=5000, help='Stop optimizing the forward model for these last iterations')
-@click.option('--forward_opt_steps', type=int, default=5, help='Number of forward opt steps in alternate training scheme')
+@click.option('--forward_opt_steps', type=int, default=0, help='Number of forward opt steps in alternate training scheme')
 @click.option('--backward_opt_steps', type=int, default=495, help='Number of backward opt steps in alternate training scheme')
 # Training Options
 @click.option('--optimizer',type=click.Choice(['adam','adamw']), default='adam')
@@ -105,8 +103,7 @@ def training(**opts):
     sampling_sde = get_sde(opts.sde)
     # Set up backwards model
     network_opts = dotdict({
-        'out_shape' : dataset.out_shape,
-        'cond_length' : dataset.metadata['cond_length']
+        'out_shape' : [dataset.out_shape[0] * (2 if sde.is_augmented else 1), *dataset.out_shape[1:]]
     })
     model_backward, ema_backward = get_model(opts.model_backward,sde, device,network_opts=network_opts)
     sde.backward_score, sampling_sde.backward_score = model_backward, ema_backward
@@ -184,46 +181,17 @@ def training(**opts):
                 torch.save(model_forward.state_dict(),os.path.join(path, 'forward.pt'))
                 torch.save(ema_forward.state_dict(),os.path.join(path, 'forward_ema.pt'))
                 
-            if dataset_type == 'time-series':
-                future, past = dataset.__next__(train=False)
-                future = future.to(device)
-                past = past.to(device)
-                pred = create_diffusion_time_series_prediction(24,network_opts.out_shape[0],past,sde)
-                pred_ema = create_diffusion_time_series_prediction(24,network_opts.out_shape[0],past,sampling_sde)
-                plot_time_series(past,future,[pred,pred_ema],['pred','ema'])
-            else:
-                sampling_shape = (1000 if dataset_type else 32, *network_opts.out_shape)
-                new_data, _ = sde.sample(sampling_shape, device)
-                new_data_ema, _  = sampling_sde.sample(sampling_shape, device)
-                if dataset_type == 'toy':
-                    relevant_log_info = toy_data_figs([data, new_data, new_data_ema], ['true','normal', 'ema'])
-                    wandb.log(relevant_log_info)
-                elif dataset_type == 'image':
-                    plot_32_mnist(new_data,os.path.join(opts.dir,f'itr_{i+1}.png'))
+            sampling_shape = (1000 if dataset_type else 32, *network_opts.out_shape)
+            new_data, _ = sde.sample(sampling_shape, device)
+            new_data_ema, _  = sampling_sde.sample(sampling_shape, device)
+            if dataset_type == 'toy':
+                relevant_log_info = toy_data_figs([data, new_data, new_data_ema], ['true','normal', 'ema'])
+                wandb.log(relevant_log_info)
+            elif dataset_type == 'image':
+                plot_32_mnist(new_data,os.path.join(opts.dir,f'itr_{i+1}.png'))
 
             
     wandb.finish()
-
-@torch.no_grad()
-def create_diffusion_time_series_prediction(tot_pred_length, pred_size, past, sde):
-    k = ceil(tot_pred_length//pred_size)
-    prediction = torch.zeros(past.shape[0],pred_size * k,past.shape[-1], device=past.device)
-    cur_past = past.detach().clone()
-    for i in range(k):
-        new_samples = sde.sample((past.shape[0],pred_size, past.shape[-1]),past.device,cond=cur_past,n_time_pts=25)[0] 
-        prediction[:,pred_size * i:pred_size * (i+1)] = new_samples
-        cur_past = torch.cat((cur_past[:,pred_size:],prediction[:,pred_size * i:pred_size * (i+1)]),dim=1)
-    return prediction
-
-def plot_time_series(past,future, prediction_array, names):
-    figure = go.Figure()
-    idx = torch.arange(past.shape[1] + 30)
-    figure.add_vline(past.shape[1]-1)
-    for j in range(1):
-        figure.add_trace(go.Scatter(x=idx,y=torch.cat((past[j,:,-1],future[j,:,-1]),dim=-1).cpu().detach().numpy(),name=f'True {j}'))
-        for name, prediction in zip(names, prediction_array):
-            figure.add_trace(go.Scatter(x=idx,y=torch.cat((past[j,:,-1],prediction[j,:,-1]),dim=-1).cpu().detach().numpy(),name=f'Prediction {j}-{name}'))
-    wandb.log({'figure': figure})
 
 def toy_data_figs(data_array, names):
     # We assume that the ground truth is in the zeroth position
