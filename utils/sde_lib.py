@@ -281,7 +281,7 @@ class MomentumSchrodingerBridge(SchrodingerBridge):
     return (self.beta(t) * self.gamma)**.5 * torch.cat((zeros,ones),dim=1)
   
   
-  def get_trajectories_for_loss(self, in_cond, time_pts,forward=True):
+  def get_trajectories_for_loss(self, in_cond, time_pts,forward=True,cond=None):
     n_time_pts = time_pts.shape[0]
     
     zt = in_cond.detach().clone().requires_grad_(True)
@@ -295,7 +295,7 @@ class MomentumSchrodingerBridge(SchrodingerBridge):
       t_shape = t.expand(batch_size)
       
       bt = self.beta(t)
-      policy = (self.gamma * bt)**.5 * cur_score(zt,t_shape) # g * fw_score
+      policy = (self.gamma * bt)**.5 * cur_score(zt,t_shape,cond) # g * fw_score
       save_idx = i if forward else -(i+1)
       trajectories[:,save_idx] = zt
       policies[:,save_idx] = policy
@@ -382,7 +382,7 @@ class LinearMomentumSchrodingerBridge(MomentumSchrodingerBridge, LinearSDE):
         We internally assign the forward model to be the multiplication against this matrix
     """
     MomentumSchrodingerBridge.__init__(self,T,delta,gamma,beta_max,forward_model,backward_model)
-    LinearSDE.__init__(self,backward_score=backward_model, is_augmented=True)
+    LinearSDE.__init__(self,backward_model=backward_model, is_augmented=True)
     self.forward_score = forward_model
 
   @property

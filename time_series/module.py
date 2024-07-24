@@ -163,11 +163,10 @@ class DiffusionModel(nn.Module):
             cond_dim=hidden_size,
             interval=self.n_timestep,
         )
-        self.forward_net = MatrixTimeEmbedding([1,input_size]) # TODO: Verify that this is correct
+        self.forward_net = MatrixTimeEmbedding([2 if self.sde.is_augmented else 1,input_size]) # TODO: Verify that this is correct
 
         self.sde.backward_score = self.backward_net
         if hasattr(self.sde,'forward_score'):
-            print('Found atribute :V')
             self.sde.forward_score = self.forward_net
         self.routine = get_routine(self.sde,self.sde,dotdict({
             'sde': sde,

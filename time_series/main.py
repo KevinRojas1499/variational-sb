@@ -23,9 +23,6 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from utils.misc import dotdict
 
-from pathlib import Path
-ROOT_DIR = Path(__file__).resolve().parent / 'results'
-
 
 def set_seed(seed):
     random.seed(seed)
@@ -50,25 +47,11 @@ def set_seed(seed):
 @click.option('--dsm_cool_down', type=int, default=500, help='Stop optimizing the forward model for these last iterations')
 @click.option('--forward_opt_steps', type=int, default=5, help='Number of forward opt steps in alternate training scheme')
 @click.option('--backward_opt_steps', type=int, default=495, help='Number of backward opt steps in alternate training scheme')
+@click.option('--dir', type=str)
 def main(**opt):
     opt = dotdict(opt)
     print(opt)
     set_seed(opt.seed)
-
-    if opt.ddpm:
-        prefix = 'ddpm'
-    elif opt.forward_opt_steps == 0:
-        prefix = 'dsm'
-    else:
-        prefix = 'sb'
-
-    name = f'{prefix}__{opt.data}__{opt.seed}__{opt.forward_opt_steps}__{opt.backward_opt_steps}'
-    dir = ROOT_DIR / name
-    dir.mkdir(exist_ok=True, parents=True)
-
-    if (dir / 'forecasts.pickle').exists():
-        print(f'Experiment {name} already exists. Skipping...')
-        return
 
     dataset = get_dataset(opt.data, regenerate=False)
 
@@ -84,20 +67,6 @@ def main(**opt):
 
     dataset_train = train_grouper(dataset.train)
     dataset_test = test_grouper(dataset.test)
-    # print('Num test dates', int(len(dataset.test) / len(dataset.train)))
-    
-    # for x in dataset_test:
-    #     print(x.keys())
-    #     print(x['target'].shape)
-    # i = 0
-    # for batch in dataset_train:
-    #     # print(i)
-    #     for key, value in batch.items():
-    #         print(f'KEY ------- {key}')
-    #         print(f'VALUE ----------- {value}')
-        
-    #     if i == 0:
-    #         break
 
     estimator = DiffusionEstimator(
         freq=dataset.metadata.freq,
@@ -119,15 +88,16 @@ def main(**opt):
             accelerator='cpu' if opt.cpu else 'gpu',
             devices=[opt.device],
             callbacks=[ModelCheckpoint(monitor=None)],
-            logger=CSVLogger(dir, name='logs'),
+            logger=CSVLogger(opt.dir, name='logs'),
         ),
     )
 
     predictor = estimator.train(dataset_train, cache_data=True, shuffle_buffer_length=1024)
 
+    torch.save(predictor.prediction_net.model.backward_net.state_dict(), os.path.join(opt.dir,'backward_model.pt'))
     if opt.sde not in ['vp','cld']:
-        A = predictor.prediction_net.model.forward_net.detach().cpu().numpy()
-        np.save(dir / 'forward_matrix.npy', A)
+        A = predictor.prediction_net.model.forward_net
+        torch.save(A.state_dict(), os.path.join(opt.dir,'forward_model.pt'))
 
     forecast_it, ts_it = make_evaluation_predictions(
         dataset=dataset_test,
@@ -176,10 +146,10 @@ def main(**opt):
 
     print(summary_metrics)
 
-    with open(dir / 'metrics.json', 'w') as f:
+    with open(os.path.join(opt.dir,'metrics.json'), 'w') as f:
         json.dump(agg_metric, f)
 
-    with open(dir / 'forecasts.pickle', 'wb') as f:
+    with open(os.path.join(opt.dir, 'forecasts.pickle'), 'wb') as f:
         pickle.dump([forecasts, targets], f)
 
 

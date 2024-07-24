@@ -51,9 +51,9 @@ class VariationalDiffusionTrainingRoutine():
         self.model_forward = self.sb.At
         self.model_backward = self.sb.backward_score
         if self.sb.is_augmented:
-            self.base_sde = SDEs.CLD(T=self.sb.T, delta=self.sb.delta, beta_max=self.sb.beta_max, model_backward=self.model_backward)
+            self.base_sde = SDEs.CLD(T=self.sb.T, delta=self.sb.delta, beta_max=self.sb.beta_max, backward_model=self.model_backward)
         else:
-            self.base_sde = SDEs.VP(T=self.sb.T,delta=self.sb.delta,beta_max=self.sb.beta_max,model_backward=self.model_backward)
+            self.base_sde = SDEs.VP(T=self.sb.T,delta=self.sb.delta,beta_max=self.sb.beta_max,backward_model=self.model_backward)
         self.trajectories = None
         self.frozen_policy = None
         self.time_pts = torch.linspace(0., sb.T,n_time_pts)
@@ -111,9 +111,6 @@ class VariationalDiffusionTrainingRoutine():
     def training_iteration(self, itr, data,cond=None):
         prev_stage = self.get_training_stage(itr-1)
         stage = self.get_training_stage(itr)
-        if prev_stage != stage:
-            print('CHANGED STAGES')
-            print(prev_stage, stage)
         if stage == 'dsm':
             if itr == 0:
                 self.freeze_models(optimizing_forward=False)
@@ -140,7 +137,6 @@ class EvalLossRoutine():
         return self.loss_fn(self.sde, data,cond)
 
 def get_routine(sde, sampling_sde, opts):
-    print(sde)
     if isinstance(sde,(SDEs.VP, SDEs.CLD)):
         return EvalLossRoutine(sde=sde, loss_fn=losses.get_loss(opts.sde, is_alternate_training=False))
     else:
