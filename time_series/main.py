@@ -48,21 +48,21 @@ def set_seed(seed):
 @click.option('--forward_opt_steps', type=int, default=5, help='Number of forward opt steps in alternate training scheme')
 @click.option('--backward_opt_steps', type=int, default=495, help='Number of backward opt steps in alternate training scheme')
 @click.option('--dir', type=str)
-def main(**opt):
-    opt = dotdict(opt)
-    print(opt)
-    set_seed(opt.seed)
+def main(**opts):
+    opts = dotdict(opts)
+    print(opts)
+    set_seed(opts.seed)
 
-    dataset = get_dataset(opt.data, regenerate=False)
+    dataset = get_dataset(opts.data, regenerate=False)
 
-    opt.data_dim = min(int(dataset.metadata.feat_static_cat[0].cardinality), opt.max_data_dim)
+    opts.data_dim = min(int(dataset.metadata.feat_static_cat[0].cardinality), opts.max_data_dim)
 
     train_grouper = MultivariateGrouper(
-        max_target_dim=opt.data_dim,
+        max_target_dim=opts.data_dim,
     )
     test_grouper = MultivariateGrouper(
         num_test_dates=int(len(dataset.test) / len(dataset.train)),
-        max_target_dim=opt.data_dim,
+        max_target_dim=opts.data_dim,
     )
 
     dataset_train = train_grouper(dataset.train)
@@ -70,33 +70,33 @@ def main(**opt):
 
     estimator = DiffusionEstimator(
         freq=dataset.metadata.freq,
-        input_size=opt.data_dim,
+        input_size=opts.data_dim,
         prediction_length=dataset.metadata.prediction_length,
         context_length=dataset.metadata.prediction_length * 3,
-        batch_size=opt.batch_size,
-        sde=opt.sde,
-        dsm_warm_up=opt.dsm_warm_up,
-        dsm_cool_down=opt.dsm_cool_down,
-        forward_opt_steps=opt.forward_opt_steps,
-        backward_opt_steps=opt.backward_opt_steps,
+        batch_size=opts.batch_size,
+        sde=opts.sde,
+        dsm_warm_up=opts.dsm_warm_up,
+        dsm_cool_down=opts.dsm_cool_down,
+        forward_opt_steps=opts.forward_opt_steps,
+        backward_opt_steps=opts.backward_opt_steps,
         num_layers=2,
-        hidden_size=opt.hidden_dim,
+        hidden_size=opts.hidden_dim,
         lags_seq=None,
         scaling='std',
         trainer_kwargs=dict(
-            max_epochs=opt.epochs,
-            accelerator='cpu' if opt.cpu else 'gpu',
-            devices=[opt.device],
+            max_epochs=opts.epochs,
+            accelerator='cpu' if opts.cpu else 'gpu',
+            devices=[opts.device],
             callbacks=[ModelCheckpoint(monitor=None)],
-            logger=CSVLogger(opt.dir, name='logs'),
+            logger=CSVLogger(opts.dir, name='logs'),
         ),
     )
 
     predictor = estimator.train(dataset_train, cache_data=True, shuffle_buffer_length=1024)
 
-    torch.save(predictor.prediction_net.model.backward_net.state_dict(), os.path.join(opt.dir,'backward_model.pt'))
-    if opt.sde not in ['vp','cld']:
-        torch.save(predictor.prediction_net.model.forward_net.state_dict(), os.path.join(opt.dir,'forward_model.pt'))
+    torch.save(predictor.prediction_net.model.backward_net.state_dict(), os.path.join(opts.dir,'backward_model.pt'))
+    if opts.sde not in ['vp','cld']:
+        torch.save(predictor.prediction_net.model.forward_net.state_dict(), os.path.join(opts.dir,'forward_model.pt'))
 
     forecast_it, ts_it = make_evaluation_predictions(
         dataset=dataset_test,
@@ -126,13 +126,13 @@ def main(**opt):
 
     print(summary_metrics)
 
-    with open(os.path.join(opt.dir,'metrics.json'), 'w') as f:
+    with open(os.path.join(opts.dir,'metrics.json'), 'w') as f:
         json.dump(agg_metric, f)
 
-    with open(os.path.join(opt.dir,'summary_metrics.json'), 'w') as f:
+    with open(os.path.join(opts.dir,'summary_metrics.json'), 'w') as f:
         json.dump(summary_metrics, f)
         
-    with open(os.path.join(opt.dir, 'forecasts.pickle'), 'wb') as f:
+    with open(os.path.join(opts.dir, 'forecasts.pickle'), 'wb') as f:
         pickle.dump([forecasts, targets], f)
 
 

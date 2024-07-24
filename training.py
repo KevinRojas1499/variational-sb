@@ -72,11 +72,11 @@ def default_log_rate(ctx, param, value):
     return 2000 if is_sb_sde(sde) else 2000
 
 @click.command()
-@click.option('--dataset',type=click.Choice(['mnist','spiral','checkerboard','exchange_rate','electricity_nips']))
+@click.option('--dataset',type=click.Choice(['mnist','spiral','checkerboard']))
 @click.option('--model_forward',type=click.Choice(['mlp','linear']), default='mlp')
-@click.option('--model_backward',type=click.Choice(['mlp','unet', 'linear','time-series']), default='mlp')
+@click.option('--model_backward',type=click.Choice(['mlp','unet', 'linear']), default='mlp')
 @click.option('--precondition', is_flag=True, default=True)
-@click.option('--sde',type=click.Choice(['vp','cld','sb','edm', 'linear-sb','momentum-sb','linear-momentum-sb']), default='vp')
+@click.option('--sde',type=click.Choice(['vp','cld','sb', 'linear-sb','momentum-sb','linear-momentum-sb']), default='vp')
 @click.option('--dsm_warm_up', type=int, default=2000, help='Perform first iterations using just DSM')
 @click.option('--dsm_cool_down', type=int, default=5000, help='Stop optimizing the forward model for these last iterations')
 @click.option('--forward_opt_steps', type=int, default=5, help='Number of forward opt steps in alternate training scheme')
