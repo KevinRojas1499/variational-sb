@@ -483,7 +483,7 @@ class LinearMomentumSchrodingerBridge(MomentumSchrodingerBridge, LinearSDE):
 class CLD(SDE):
   # We assume that images have shape [B, C, H, W] 
   # Additionally there has been added channels as momentum
-  def __init__(self,T=1.,delta=1e-3, gamma=2,beta_max=5., backward_model=None):
+  def __init__(self,T=1.,delta=1e-3, gamma=2,beta_max=10., backward_model=None):
     super().__init__(is_augmented=True)
     self._T = T
     self.delta = delta
@@ -496,10 +496,10 @@ class CLD(SDE):
     return self._T
   
   def beta(self, t):
-    return self.beta_max 
+    return self.beta_max/2 # I divide by 2 here so that it matches other parts of the code where we use -beta/2
   
   def beta_int(self, t):
-    return self.beta_max  * t
+    return self.beta_max  * t/2
   
   
   def get_exp_At_components(self, t):
