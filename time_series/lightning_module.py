@@ -68,6 +68,7 @@ class DiffusionLightningModule(pl.LightningModule):
         f_opt.step()
         b_opt.step()
 
+        self.log('train_loss', train_loss, prog_bar=True)
         return train_loss
 
     def validation_step(self, batch, batch_idx: int):
