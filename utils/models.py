@@ -25,31 +25,16 @@ class MLP(nn.Module):
         
         return self.sequential(h)
 
-class MatrixTimeEmbedding(nn.Module):
-    def __init__(self,out_shape) -> None:
-        super().__init__()
-        self.diagonal = False
+class MatrixTimeEmbedding(torch.nn.Module):
+    def __init__(self, out_shape):
+        super(MatrixTimeEmbedding,self).__init__()
         self.out_shape = out_shape
         self.real_dim = np.prod(out_shape)
-        self.sequential = nn.Sequential(
-            nn.Linear(1,128,bias=False),
-            nn.SiLU(),
-            nn.Linear(128,256,bias=False),
-            nn.SiLU(),
-            nn.Linear(256,128,bias=False),
-            nn.SiLU()
-        )
-        self.out = nn.Linear(128, self.real_dim,bias=False)
-        self.apply(self.init_weights)
+        self.ones = [-1] * len(self.out_shape)
+
+        self.Lambda = nn.Parameter(torch.zeros(self.real_dim))
         
-    def init_weights(self, m):
-        if isinstance(m,nn.Linear):
-            nn.init.normal_(m.weight,std=0.01)
-             
-        
-    def forward(self,t):
-        t = t.flatten().unsqueeze(-1)
-        
-        At = self.sequential(t)
-        At = self.out(At).view(-1,*self.out_shape)
-        return nn.functional.relu(At)
+
+    def forward(self, t):
+        A = self.Lambda.reshape(1, *self.out_shape).expand(tuple([t.shape[0], *self.ones]))
+        return A

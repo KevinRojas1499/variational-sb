@@ -1,8 +1,8 @@
 import torch.nn as nn
 import torch
+from typing import Union
 
-
-from utils.sde_lib import SDE, VP, CLD
+from utils.sde_lib import SDE, VP, CLD, LinearMomentumSchrodingerBridge, LinearSchrodingerBridge
 from utils.models import MLP, MatrixTimeEmbedding
 from utils.unet import ScoreNet
 
@@ -29,6 +29,23 @@ class PrecondCLD(nn.Module):
         
         return -vt/(lvv**2+lxv).view(-1,*ones) - self.net(zt,t,cond)/lvv.view(-1,*ones)
 
+class PrecondGeneral(nn.Module):
+    def __init__(self, net, sde : Union[LinearSchrodingerBridge,LinearMomentumSchrodingerBridge]) -> None:
+        super().__init__()
+        self.net = net
+        self.sde = sde
+        
+    def forward(self, zt,t,cond=None):
+        xt,vt = zt.chunk(2,dim=1)
+        ones = [1] * (len(xt.shape)-1)
+        with torch.no_grad():
+            scale, L = self.sde.get_transition_params(zt,t.view(-1,*ones))
+
+        if isinstance(self.sde, LinearMomentumSchrodingerBridge):
+            lxx, lxv, lvv = L[...,0,0], L[...,0,1], L[...,1,1]
+            
+        
+        return -vt/(lvv**2+lxv) - self.net(zt,t,cond)/lvv
 
 def get_model(name, sde : SDE, device, network_opts=None):
     print(network_opts)
@@ -50,4 +67,4 @@ def get_preconditioned_model(model, sde):
         return PrecondVP(model,sde)
     elif isinstance(sde,CLD):
         return PrecondCLD(model, sde)
-    return model
+    return PrecondGeneral(model,sde)

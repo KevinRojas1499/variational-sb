@@ -8,7 +8,7 @@ from tqdm import tqdm
 from itertools import chain
 from torch.optim import Adam
 
-from utils.training_routines import get_routine
+from utils.training_routines import get_routine, VariationalDiffusionTrainingRoutine
 from utils.sde_lib import get_sde
 from utils.model_utils import get_model, get_preconditioned_model
 from datasets.dataset_utils import get_dataset
@@ -77,7 +77,7 @@ def default_log_rate(ctx, param, value):
 @click.option('--dsm_warm_up', type=int, default=2000, help='Perform first iterations using just DSM')
 @click.option('--dsm_cool_down', type=int, default=5000, help='Stop optimizing the forward model for these last iterations')
 @click.option('--forward_opt_steps', type=int, default=5, help='Number of forward opt steps in alternate training scheme')
-@click.option('--backward_opt_steps', type=int, default=495, help='Number of backward opt steps in alternate training scheme')
+@click.option('--backward_opt_steps', type=int, default=195, help='Number of backward opt steps in alternate training scheme')
 # Training Options
 @click.option('--optimizer',type=click.Choice(['adam','adamw']), default='adam')
 @click.option('--lr', type=float, default=3e-4)
@@ -161,8 +161,9 @@ def training(**opts):
         update_ema(model_backward, ema_backward, opts.ema_beta)
         if is_sb:
             update_ema(model_forward,  ema_forward, opts.ema_beta)
-        # if isinstance(routine, Variational):
-        #     copy_ema_to_model(model_forward, ema_forward)
+            
+            if isinstance(routine, VariationalDiffusionTrainingRoutine):
+                copy_ema_to_model(model_forward, ema_forward)
         
         if enable_wandb:
             wandb.log({
@@ -170,6 +171,7 @@ def training(**opts):
             })
         # Evaluate sample accuracy
         if (i+1)%log_sample_quality == 0 or i+1 == num_iters:
+            # print(model_forward.Lambda)
             # Save Checkpoints
             path = os.path.join(opts.dir, f'itr_{i+1}/')
             os.makedirs(path,exist_ok=True) # Still wondering it this is the best idea

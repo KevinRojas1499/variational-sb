@@ -44,9 +44,9 @@ def set_seed(seed):
 @click.option('--epochs', type=int, default=50)
 @click.option('--sde',type=click.Choice(['vp','cld', 'linear-sb','linear-momentum-sb']), default='vp')
 @click.option('--dsm_warm_up', type=int, default=500, help='Perform first iterations using just DSM')
-@click.option('--dsm_cool_down', type=int, default=500, help='Stop optimizing the forward model for these last iterations')
-@click.option('--forward_opt_steps', type=int, default=3, help='Number of forward opt steps in alternate training scheme')
-@click.option('--backward_opt_steps', type=int, default=497, help='Number of backward opt steps in alternate training scheme')
+@click.option('--dsm_cool_down', type=int, default=1000, help='Stop optimizing the forward model for these last iterations')
+@click.option('--forward_opt_steps', type=int, default=5, help='Number of forward opt steps in alternate training scheme')
+@click.option('--backward_opt_steps', type=int, default=295, help='Number of backward opt steps in alternate training scheme')
 @click.option('--dir', type=str)
 def main(**opts):
     opts = dotdict(opts)

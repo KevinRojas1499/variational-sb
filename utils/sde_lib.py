@@ -82,8 +82,8 @@ class LinearSDE(SDE):
     pass  
 class VP(LinearSDE):
 
-  def __init__(self,T=1.,delta=1e-3, beta_max=10, model_backward=None):
-    LinearSDE.__init__(self,backward_model=model_backward,is_augmented=False)
+  def __init__(self,T=1.,delta=1e-3, beta_max=10, backward_model=None):
+    LinearSDE.__init__(self,backward_model=backward_model,is_augmented=False)
     self._T = T
     self.delta = delta
     self.beta_max = beta_max
@@ -330,7 +330,7 @@ class LinearSchrodingerBridge(SchrodingerBridge, LinearSDE):
         We internally assign the forward model to be the multiplication against this matrix
     """
     SchrodingerBridge.__init__(self,T,delta,beta_max,is_augmented=False)
-    LinearSDE.__init__(self,backward_score=backward_model, is_augmented=False)
+    LinearSDE.__init__(self,backward_model=backward_model, is_augmented=False)
     self.forward_score = forward_model
 
   @property
@@ -397,15 +397,6 @@ class LinearMomentumSchrodingerBridge(MomentumSchrodingerBridge, LinearSDE):
   def forward_score(self,forward_model):
     self.At = forward_model
   
-  def D(self,t):
-    mat = self.At(t) # Has shape [bs, d, 2d]
-    dim = mat.shape[-2]
-    Dt = torch.cat((torch.zeros_like(mat),- 2 * self.gamma * mat),dim=-2) # [bs,2d,2d]
-    id = torch.eye(dim, device=mat.device).unsqueeze(0)
-    Dt[:,:dim, -dim:] -= id
-    Dt[:,-dim:, :dim] += id
-    Dt[:,-dim:, -dim:] += self.gamma * id
-    return Dt
 
   @property
   def T(self):

@@ -56,7 +56,7 @@ class VariationalDiffusionTrainingRoutine():
             self.base_sde = SDEs.VP(T=self.sb.T,delta=self.sb.delta,beta_max=self.sb.beta_max,backward_model=self.model_backward)
         self.trajectories = None
         self.frozen_policy = None
-        self.time_pts = torch.linspace(0., sb.T,n_time_pts)
+        self.time_pts = torch.linspace(0., sb.T-sb.delta,n_time_pts)
         self.num_iters_dsm_warm_up = num_iters_dsm_warm_up
         self.num_iters_middle_stage = num_iters_middle 
         self.num_iters_dsm_cool_down = num_iters_dsm_cool_down
