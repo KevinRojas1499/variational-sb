@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 from tqdm import tqdm
 from itertools import chain
-from torch.optim import Adam
+from torch.optim import Adam, AdamW
 
 from utils.training_routines import get_routine, VariationalDiffusionTrainingRoutine
 from utils.sde_lib import get_sde
@@ -61,7 +61,7 @@ def default_num_iters(ctx, param, value):
     sde = ctx.params.get('sde')
     if value is not None: 
         return value
-    return 30000 if is_sb_sde(sde) else 30000
+    return 100000 if is_sb_sde(sde) else 100000
 def default_log_rate(ctx, param, value):
     sde = ctx.params.get('sde')
     if value is not None: 
@@ -73,11 +73,11 @@ def default_log_rate(ctx, param, value):
 @click.option('--model_forward',type=click.Choice(['linear']), default='linear')
 @click.option('--model_backward',type=click.Choice(['mlp','unet', 'linear']), default='mlp')
 @click.option('--precondition', is_flag=True, default=True)
-@click.option('--sde',type=click.Choice(['vp','cld','sb', 'linear-sb','momentum-sb','linear-momentum-sb']), default='vp')
+@click.option('--sde',type=click.Choice(['vp','cld','linear-sb','linear-momentum-sb']), default='vp')
 @click.option('--dsm_warm_up', type=int, default=2000, help='Perform first iterations using just DSM')
-@click.option('--dsm_cool_down', type=int, default=5000, help='Stop optimizing the forward model for these last iterations')
+@click.option('--dsm_cool_down', type=int, default=0, help='Stop optimizing the forward model for these last iterations')
 @click.option('--forward_opt_steps', type=int, default=5, help='Number of forward opt steps in alternate training scheme')
-@click.option('--backward_opt_steps', type=int, default=195, help='Number of backward opt steps in alternate training scheme')
+@click.option('--backward_opt_steps', type=int, default=500, help='Number of backward opt steps in alternate training scheme')
 # Training Options
 @click.option('--optimizer',type=click.Choice(['adam','adamw']), default='adam')
 @click.option('--lr', type=float, default=3e-4)
@@ -127,9 +127,9 @@ def training(**opts):
         sde.backward_score = get_preconditioned_model(model_backward, sde)
         sampling_sde.backward_score = get_preconditioned_model(model_backward, sde)
     
-    opt = Adam(chain(model_forward.parameters(), model_backward.parameters()) 
+    opt = AdamW(chain(model_forward.parameters(), model_backward.parameters()) 
                if is_sb else model_backward.parameters(), lr=opts.lr )
-    
+    num_steps_f, num_steps_b = 0,0
     num_iters = opts.num_iters
     log_sample_quality=opts.log_rate
     routine = get_routine(sde,sampling_sde,opts)
@@ -158,9 +158,15 @@ def training(**opts):
         opt.step()
         
         # Update EMA
-        update_ema(model_backward, ema_backward, opts.ema_beta)
-        if is_sb:
-            update_ema(model_forward,  ema_forward, opts.ema_beta)
+        if all(not param.requires_grad for param in model_backward.parameters()):
+            num_steps_b+=1
+            decay = min(opts.ema_beta,(1 + num_steps_b) / (10 + num_steps_b))
+            update_ema(model_backward, ema_backward, decay)
+        if is_sb and all(not param.requires_grad for param in model_forward.parameters()):
+            num_steps_f+=1
+            decay = min(opts.ema_beta,(1 + num_steps_f) / (10 + num_steps_f))
+            
+            update_ema(model_forward,  ema_forward, decay)
             
             if isinstance(routine, VariationalDiffusionTrainingRoutine):
                 copy_ema_to_model(model_forward, ema_forward)
@@ -171,7 +177,7 @@ def training(**opts):
             })
         # Evaluate sample accuracy
         if (i+1)%log_sample_quality == 0 or i+1 == num_iters:
-            # print(model_forward.Lambda)
+            print(model_forward.Lambda)
             # Save Checkpoints
             path = os.path.join(opts.dir, f'itr_{i+1}/')
             os.makedirs(path,exist_ok=True) # Still wondering it this is the best idea
@@ -206,7 +212,7 @@ def toy_data_figs(data_array, names):
             fig.add_trace(go.Scatter(x=data[:,0].cpu().detach().numpy(), 
                                             y=data[:,1].cpu().detach().numpy(),
                                             mode='markers',name=name))
-            # fig.update_layout(yaxis_range=[-16,16], xaxis_range=[-16,16])
+            # fig.update_layout(yaxis_range=[-10,10], xaxis_range=[-30,50])
         stats_and_figs[f'w2-{name}'] = get_w2(data_array[0], data)   
     stats_and_figs['samples'] = fig  
     return stats_and_figs

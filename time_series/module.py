@@ -27,6 +27,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.training_routines import get_routine
 import utils.sde_lib as SDEs
 from utils.models import MatrixTimeEmbedding
+from utils.model_utils import get_preconditioned_model
 from utils.misc import dotdict
 
 class DiffusionModel(nn.Module):
@@ -163,6 +164,7 @@ class DiffusionModel(nn.Module):
             cond_dim=hidden_size,
             interval=self.n_timestep,
         )
+        self.backward_net = get_preconditioned_model(self.backward_net,self.sde)
         self.forward_net = MatrixTimeEmbedding([2 if self.sde.is_augmented else 1,input_size]) # TODO: Verify that this is correct
 
         self.sde.backward_score = self.backward_net

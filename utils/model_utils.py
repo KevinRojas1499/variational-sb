@@ -36,16 +36,17 @@ class PrecondGeneral(nn.Module):
         self.sde = sde
         
     def forward(self, zt,t,cond=None):
-        xt,vt = zt.chunk(2,dim=1)
-        ones = [1] * (len(xt.shape)-1)
+        ones = [1] * (len(zt.shape)-1)
         with torch.no_grad():
             scale, L = self.sde.get_transition_params(zt,t.view(-1,*ones))
 
         if isinstance(self.sde, LinearMomentumSchrodingerBridge):
+            xt,vt = zt.chunk(2,dim=1)
             lxx, lxv, lvv = L[...,0,0], L[...,0,1], L[...,1,1]
-            
         
-        return -vt/(lvv**2+lxv) - self.net(zt,t,cond)/lvv
+            return - self.net(zt,t,cond)/lvv
+        
+        return - self.net(zt,t,cond)/L
 
 def get_model(name, sde : SDE, device, network_opts=None):
     print(network_opts)

@@ -358,17 +358,24 @@ class LinearSchrodingerBridge(SchrodingerBridge, LinearSDE):
     return res
 
   def get_transition_params(self, x, t):
-    scale = torch.exp(-.5 * (self.beta_int(t) - 2 * self.integrate_forward_score(t)))
+    A = self.At(t)
+    scale = torch.exp(-.5 * (self.beta_int(t) * (1 - 2 * A)))
     
-    return scale, (1-scale**2).sqrt()
+    return scale, ((1-scale**2)/(1 - 2 * A)).sqrt()
 
   def marginal_prob(self, x, t):
     # If    x is of shape [B, H, W, C]
     # then  t is of shape [B, 1, 1, 1] 
     # And similarly for other shapes
-    scale = torch.exp(-.5 * (self.beta_int(t) - 2 * self.integrate_forward_score(t)))
-    return scale * x, (1-scale**2).sqrt()
-  
+    scale, std = self.get_transition_params(x,t)
+    return scale * x, std
+
+  def prior_sampling(self, shape, device):
+    noise = torch.randn(shape,device=device)
+    t = (torch.ones(noise.shape[0], device=device) * self.T).view(-1,*([1] * (len(noise.shape) - 1)))
+    
+    scale, std = self.get_transition_params(noise,t)
+    return std * noise
 
 class LinearMomentumSchrodingerBridge(MomentumSchrodingerBridge, LinearSDE):
   """ 
@@ -447,7 +454,7 @@ class LinearMomentumSchrodingerBridge(MomentumSchrodingerBridge, LinearSDE):
     M, beta_int = self.get_M_matrix(z, t)
     ch_power = torch.zeros((M.shape[0], 4, 4),device=z.device)
     ch_power[:,:2, :2] = M
-    ch_power[:,2:, 2:] = -M.mT
+    ch_power[:, 2:,2:] = -M.mT
     ch_power[:, 1, 3] = self.gamma * beta_int
     ch_pair = torch.linalg.matrix_exp(ch_power)
     C = ch_pair[:, :2, 2:]
@@ -469,7 +476,14 @@ class LinearMomentumSchrodingerBridge(MomentumSchrodingerBridge, LinearSDE):
     
     return torch.cat((new_x,new_v),dim=1), L
 
-
+  def prior_sampling(self, shape, device):
+    noise = torch.randn(shape, device=device)
+    t = (torch.ones(noise.shape[0], device=device) * self.T).view(-1,*([1] * (len(noise.shape) - 1)))
+    H, L, = self.get_transition_params(noise,t)
+    noise_x, noise_v = torch.chunk(noise,2, dim=1)
+    n_noise_x = L[...,0,0] * noise_x
+    n_noise_v = L[...,0,1] * noise_x + L[...,1,1] * noise_v
+    return torch.cat((n_noise_x,n_noise_v),dim=1) # notice that we are using that 
 
 class CLD(SDE):
   # We assume that images have shape [B, C, H, W] 
