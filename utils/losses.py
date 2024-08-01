@@ -111,6 +111,8 @@ def alternate_sb_loss(sde : SDEs.SchrodingerBridge,trajectories, frozen_policy, 
     # We assume that time_pts is a uniform discretization of the interval [0,T]
     # We also assume that f has constant divergence
     # if optimize forward is true we will optimize the forward score, if not we will optimize the backward
+    assert not frozen_policy.requires_grad
+    
     frozen_policy = frozen_policy.detach()
     batch_size, data_shape = trajectories.shape[0], trajectories.shape[2:]
     dt = time_pts[1]-time_pts[0] 

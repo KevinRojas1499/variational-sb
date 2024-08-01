@@ -201,7 +201,7 @@ class DiT(nn.Module):
         mlp_ratio=4.0,
         class_dropout_prob=0.1,
         num_classes=1000,
-        learn_sigma=True,
+        learn_sigma=False,
     ):
         super().__init__()
         self.learn_sigma = learn_sigma
@@ -512,7 +512,7 @@ def DiT_S_4(**kwargs):
     return DiT(depth=12, hidden_size=384, patch_size=4, num_heads=6, **kwargs)
 
 def DiT_S_8(**kwargs):
-    return DiT(depth=12, hidden_size=384, patch_size=8, num_heads=6, **kwargs)
+    return DiT(depth=6, hidden_size=384, patch_size=8, num_heads=6, **kwargs)
 
 
 DiT_models = {

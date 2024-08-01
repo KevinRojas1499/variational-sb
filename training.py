@@ -14,6 +14,7 @@ from utils.model_utils import get_model, get_preconditioned_model
 from datasets.dataset_utils import get_dataset
 from utils.metrics import get_w2
 from utils.misc import dotdict
+from ema_pytorch import EMA
 
 def init_wandb(opts):
     wandb.init(
@@ -47,15 +48,6 @@ def get_dataset_type(name):
 
 def is_sb_sde(name):
     return (name in ['sb','linear-sb','momentum-sb','linear-momentum-sb'])
-    
-def update_ema(model, model_ema, beta):
-    for p_ema, p_net in zip(model_ema.parameters(), model.parameters()):
-        p_ema.copy_(p_net.detach().lerp(p_ema, beta))
-
-@torch.no_grad()
-def copy_ema_to_model(model, model_ema):
-    for p_ema, p_net in zip(model_ema.parameters(), model.parameters()):
-        p_net.copy_(p_ema.detach())
 
 def default_num_iters(ctx, param, value):
     sde = ctx.params.get('sde')
@@ -71,12 +63,12 @@ def default_log_rate(ctx, param, value):
 @click.command()
 @click.option('--dataset',type=click.Choice(['mnist','spiral','checkerboard']))
 @click.option('--model_forward',type=click.Choice(['linear']), default='linear')
-@click.option('--model_backward',type=click.Choice(['mlp','unet', 'linear']), default='mlp')
+@click.option('--model_backward',type=click.Choice(['mlp','unet', 'linear', 'DiT']), default='mlp')
 @click.option('--precondition', is_flag=True, default=True)
 @click.option('--sde',type=click.Choice(['vp','cld','linear-sb','linear-momentum-sb']), default='vp')
 @click.option('--dsm_warm_up', type=int, default=2000, help='Perform first iterations using just DSM')
-@click.option('--dsm_cool_down', type=int, default=0, help='Stop optimizing the forward model for these last iterations')
-@click.option('--forward_opt_steps', type=int, default=5, help='Number of forward opt steps in alternate training scheme')
+@click.option('--dsm_cool_down', type=int, default=10000, help='Stop optimizing the forward model for these last iterations')
+@click.option('--forward_opt_steps', type=int, default=100, help='Number of forward opt steps in alternate training scheme')
 @click.option('--backward_opt_steps', type=int, default=500, help='Number of backward opt steps in alternate training scheme')
 # Training Options
 @click.option('--optimizer',type=click.Choice(['adam','adamw']), default='adam')
@@ -104,12 +96,14 @@ def training(**opts):
     network_opts = dotdict({
         'out_shape' : [dataset.out_shape[0] * (2 if sde.is_augmented else 1), *dataset.out_shape[1:]]
     })
-    model_backward, ema_backward = get_model(opts.model_backward,sde, device,network_opts=network_opts)
+    model_backward = get_model(opts.model_backward,sde, device,network_opts=network_opts)
+    ema_backward = EMA(model_backward)
     sde.backward_score, sampling_sde.backward_score = model_backward, ema_backward
     print(f"Backward Model parameters: {sum(p.numel() for p in model_backward.parameters() if p.requires_grad)//1e6} M")
     if is_sb:
         # We need a forward model
-        model_forward , ema_forward  = get_model(opts.model_forward,sde,device,network_opts=network_opts)
+        model_forward  = get_model(opts.model_forward,sde,device,network_opts=network_opts)
+        ema_forward = EMA(model_forward)
         sde.forward_score, sampling_sde.forward_score = model_forward, ema_forward
         print(f"Forward Model parameters: {sum(p.numel() for p in model_backward.parameters() if p.requires_grad)//1e6} M")
     
@@ -129,7 +123,6 @@ def training(**opts):
     
     opt = AdamW(chain(model_forward.parameters(), model_backward.parameters()) 
                if is_sb else model_backward.parameters(), lr=opts.lr )
-    num_steps_f, num_steps_b = 0,0
     num_iters = opts.num_iters
     log_sample_quality=opts.log_rate
     routine = get_routine(sde,sampling_sde,opts)
@@ -159,17 +152,10 @@ def training(**opts):
         
         # Update EMA
         if all(not param.requires_grad for param in model_backward.parameters()):
-            num_steps_b+=1
-            decay = min(opts.ema_beta,(1 + num_steps_b) / (10 + num_steps_b))
-            update_ema(model_backward, ema_backward, decay)
+            ema_backward.update()
         if is_sb and all(not param.requires_grad for param in model_forward.parameters()):
-            num_steps_f+=1
-            decay = min(opts.ema_beta,(1 + num_steps_f) / (10 + num_steps_f))
             
-            update_ema(model_forward,  ema_forward, decay)
-            
-            if isinstance(routine, VariationalDiffusionTrainingRoutine):
-                copy_ema_to_model(model_forward, ema_forward)
+            ema_forward.update()
         
         if enable_wandb:
             wandb.log({
@@ -177,7 +163,8 @@ def training(**opts):
             })
         # Evaluate sample accuracy
         if (i+1)%log_sample_quality == 0 or i+1 == num_iters:
-            print(model_forward.Lambda)
+            print('Model\n', model_forward.Lambda)
+            print('EMA\n' ,  [param for param in ema_forward.parameters()])
             # Save Checkpoints
             path = os.path.join(opts.dir, f'itr_{i+1}/')
             os.makedirs(path,exist_ok=True) # Still wondering it this is the best idea

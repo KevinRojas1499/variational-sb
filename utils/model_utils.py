@@ -5,6 +5,7 @@ from typing import Union
 from utils.sde_lib import SDE, VP, CLD, LinearMomentumSchrodingerBridge, LinearSchrodingerBridge
 from utils.models import MLP, MatrixTimeEmbedding
 from utils.unet import ScoreNet
+from utils.DiT import DiT_S_8
 
 class PrecondVP(nn.Module):
     def __init__(self, net, sde : VP) -> None:
@@ -53,15 +54,15 @@ def get_model(name, sde : SDE, device, network_opts=None):
     # Returns model, ema
     augment = sde.is_augmented
     if name == 'mlp':
-        return MLP(2,augment).requires_grad_(True).to(device=device), \
-            MLP(2, augment).requires_grad_(False).to(device=device)
+        return MLP(2,augment).requires_grad_(True).to(device=device)
     elif name == 'linear':
-        return MatrixTimeEmbedding(out_shape=network_opts.out_shape).requires_grad_(True).to(device=device), \
-            MatrixTimeEmbedding(out_shape=network_opts.out_shape).requires_grad_(False).to(device=device)
+        return MatrixTimeEmbedding(out_shape=network_opts.out_shape).requires_grad_(True).to(device=device)
     elif name == 'unet':
         model = torch.nn.DataParallel(ScoreNet(in_channels=2 if sde.is_augmented else 1))
-        ema = torch.nn.DataParallel(ScoreNet(in_channels=2 if sde.is_augmented else 1))
-        return model.requires_grad_(True).to(device=device), ema.requires_grad_(False).to(device=device) 
+        return model.requires_grad_(True).to(device=device) 
+    elif name == 'DiT':
+        return DiT_S_8(in_channels=network_opts.out_shape[0]).requires_grad_(True).to(device=device)
+    
     
 def get_preconditioned_model(model, sde):
     if isinstance(sde, VP):

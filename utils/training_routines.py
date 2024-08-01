@@ -127,7 +127,9 @@ class VariationalDiffusionTrainingRoutine():
         elif stage == 'forward':
             if prev_stage != stage:
                 self.refresh_forward(data,cond)
-            return losses.alternate_sb_loss(self.sb,self.trajectories,self.frozen_policy,self.time_pts,optimize_forward=True)
+            rand_idx = torch.randint(0,data.shape[0],(100,), device=data.device)
+            
+            return losses.alternate_sb_loss(self.sb,self.trajectories[rand_idx],self.frozen_policy[rand_idx],self.time_pts,optimize_forward=True)
 class EvalLossRoutine():
     def __init__(self, sde, loss_fn):
         self.sde = sde
