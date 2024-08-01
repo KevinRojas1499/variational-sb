@@ -92,7 +92,7 @@ class VariationalDiffusionTrainingRoutine():
         self.time_pts = self.time_pts.to(device=data.device)
         if self.sb.is_augmented:
             data = losses.augment_data(data)
-        in_cond = self.sb.prior_sampling((*data.shape,),device=data.device)
+        in_cond = self.sampling_sb.prior_sampling((*data.shape,),device=data.device)
         xt, trajectories, frozen_policy = self.sampling_sb.get_trajectories_for_loss(in_cond, self.time_pts,forward=False,cond=cond)
         self.trajectories = trajectories.detach_()
         self.frozen_policy = frozen_policy.detach_()      
@@ -102,9 +102,9 @@ class VariationalDiffusionTrainingRoutine():
     @torch.no_grad()
     def refresh_backward(self, data):
         self.loss_times = torch.linspace(self.sb.delta, self.sb.T, 500, device=data.device)
-        ones = [1] * (len(data.shape)-1)
+        ones = [1] * len(data.shape[1:])
         shaped_t = self.loss_times.reshape(-1,*ones)
-        self.scales, self.stds = self.sb.get_transition_params(torch.empty((self.loss_times.shape[0], *data.shape[1:]),device=data.device), shaped_t)
+        self.scales, self.stds = self.sampling_sb.get_transition_params(torch.empty((self.loss_times.shape[0], *data.shape[1:]),device=data.device), shaped_t)
         self.freeze_models(optimizing_forward=False)    
             
                 

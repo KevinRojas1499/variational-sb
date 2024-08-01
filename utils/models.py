@@ -11,12 +11,12 @@ class MLP(nn.Module):
         if augmented_sde:
             self.true_dim += self.dim
         self.first = nn.Sequential(
-            nn.Linear(self.true_dim,128),
+            nn.Linear(self.true_dim,256),
         )
         self.blocks = nn.ModuleList(
-            [nn.Sequential(nn.Linear(128,128), nn.SiLU()) for i in range((6))]
+            [nn.Sequential(nn.Linear(256,256), nn.SiLU()) for i in range((6))]
         )
-        self.out = nn.Linear(128,self.dim)
+        self.out = nn.Linear(256,self.dim)
         
     def forward(self,x,t,cond=None):
         h = torch.cat([x, t.reshape(-1, 1)], dim=1)

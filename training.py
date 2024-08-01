@@ -5,16 +5,14 @@ import wandb
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 from tqdm import tqdm
-from itertools import chain
-from torch.optim import Adam, AdamW
 
-from utils.training_routines import get_routine, VariationalDiffusionTrainingRoutine
+from utils.training_routines import get_routine
 from utils.sde_lib import get_sde
 from utils.model_utils import get_model, get_preconditioned_model
 from datasets.dataset_utils import get_dataset
 from utils.metrics import get_w2
 from utils.misc import dotdict
-from ema_pytorch import EMA
+from utils.optim_utils import build_optimizer_ema_sched
 
 def init_wandb(opts):
     wandb.init(
@@ -66,7 +64,7 @@ def default_log_rate(ctx, param, value):
 @click.option('--model_backward',type=click.Choice(['mlp','unet', 'linear', 'DiT']), default='mlp')
 @click.option('--precondition', is_flag=True, default=True)
 @click.option('--sde',type=click.Choice(['vp','cld','linear-sb','linear-momentum-sb']), default='vp')
-@click.option('--dsm_warm_up', type=int, default=2000, help='Perform first iterations using just DSM')
+@click.option('--dsm_warm_up', type=int, default=0, help='Perform first iterations using just DSM')
 @click.option('--dsm_cool_down', type=int, default=10000, help='Stop optimizing the forward model for these last iterations')
 @click.option('--forward_opt_steps', type=int, default=100, help='Number of forward opt steps in alternate training scheme')
 @click.option('--backward_opt_steps', type=int, default=500, help='Number of backward opt steps in alternate training scheme')
@@ -97,13 +95,13 @@ def training(**opts):
         'out_shape' : [dataset.out_shape[0] * (2 if sde.is_augmented else 1), *dataset.out_shape[1:]]
     })
     model_backward = get_model(opts.model_backward,sde, device,network_opts=network_opts)
-    ema_backward = EMA(model_backward)
+    opt_b, ema_backward, sched_b = build_optimizer_ema_sched(model_backward,opts.optimizer,opts.lr)
     sde.backward_score, sampling_sde.backward_score = model_backward, ema_backward
     print(f"Backward Model parameters: {sum(p.numel() for p in model_backward.parameters() if p.requires_grad)//1e6} M")
     if is_sb:
         # We need a forward model
         model_forward  = get_model(opts.model_forward,sde,device,network_opts=network_opts)
-        ema_forward = EMA(model_forward)
+        opt_f, ema_forward, sched_f = build_optimizer_ema_sched(model_forward,opts.optimizer,opts.lr)
         sde.forward_score, sampling_sde.forward_score = model_forward, ema_forward
         print(f"Forward Model parameters: {sum(p.numel() for p in model_backward.parameters() if p.requires_grad)//1e6} M")
     
@@ -121,8 +119,6 @@ def training(**opts):
         sde.backward_score = get_preconditioned_model(model_backward, sde)
         sampling_sde.backward_score = get_preconditioned_model(model_backward, sde)
     
-    opt = AdamW(chain(model_forward.parameters(), model_backward.parameters()) 
-               if is_sb else model_backward.parameters(), lr=opts.lr )
     num_iters = opts.num_iters
     log_sample_quality=opts.log_rate
     routine = get_routine(sde,sampling_sde,opts)
@@ -139,8 +135,9 @@ def training(**opts):
             cond = cond.to(device)
             
         data = data.to(device)
-        opt.zero_grad()
-
+        opt_f.zero_grad()
+        opt_b.zero_grad()
+        
         loss = routine.training_iteration(i,data, cond)           
         loss.backward()
         
@@ -148,13 +145,13 @@ def training(**opts):
             torch.nn.utils.clip_grad_norm_(model_forward.parameters(),1)
             torch.nn.utils.clip_grad_norm_(model_backward.parameters(), 1)
         
-        opt.step()
+        opt_f.step()
+        opt_b.step()
         
         # Update EMA
         if all(not param.requires_grad for param in model_backward.parameters()):
             ema_backward.update()
         if is_sb and all(not param.requires_grad for param in model_forward.parameters()):
-            
             ema_forward.update()
         
         if enable_wandb:
