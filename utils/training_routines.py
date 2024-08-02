@@ -2,46 +2,6 @@ import torch
 import utils.sde_lib as SDEs
 import utils.losses as losses
 
-class AlternateTrainingRoutine():
-    def __init__(self,sb : SDEs.SchrodingerBridge, sampling_sb : SDEs.SchrodingerBridge,
-                 model_forward, model_backward,
-                 refresh_rate, n_time_pts):
-        self.sb = sb
-        self.sampling_sb = sampling_sb
-        self.model_forward = model_forward
-        self.model_backward = model_backward
-        self.refresh_rate = refresh_rate
-        self.trajectories = None
-        self.frozen_policy = None
-        self.time_pts = torch.linspace(0., sb.T,n_time_pts)
-    
-    def _optimizing_forward(self, itr):
-        return (itr//self.refresh_rate)%2 == 1
-    
-    def refresh(self, itr, data):
-        optimizing_forward = self._optimizing_forward(itr)
-        refresh = (itr//self.refresh_rate)%2 != ((itr-1)//self.refresh_rate)%2         
-        
-        if refresh or itr == 0:
-            if self.sb.is_augmented:
-                data = losses.augment_data(data)
-            in_cond = self.sb.prior_sampling((*data.shape,),device=data.device) if optimizing_forward else data
-            xt, trajectories, frozen_policy = self.sampling_sb.get_trajectories_for_loss(in_cond, self.time_pts,forward=not optimizing_forward)
-            self.trajectories = trajectories.detach_()
-            self.frozen_policy = frozen_policy.detach_()      
-        
-            if optimizing_forward:
-                self.model_backward.requires_grad_(False)
-                self.model_forward.requires_grad_(True)
-            else:
-                self.model_forward.requires_grad_(False)
-                self.model_backward.requires_grad_(True)
-                
-    def training_iteration(self, itr, data):
-        self.refresh(itr, data)
-        return losses.alternate_sb_loss(self.sb,self.trajectories,self.frozen_policy,self.time_pts,self._optimizing_forward(itr))
-
-
 class VariationalDiffusionTrainingRoutine():
     def __init__(self,sb : SDEs.LinearSchrodingerBridge, sampling_sb : SDEs.LinearSchrodingerBridge,
                  opt_f, sched_f, ema_f, opt_b, sched_b, ema_b,
@@ -69,6 +29,7 @@ class VariationalDiffusionTrainingRoutine():
         self.num_iters_middle_stage = num_iters_middle 
         self.num_iters_dsm_cool_down = num_iters_dsm_cool_down
         
+        self.adaptive_prior = False
         self.num_iters_forward = num_iters_forward
         self.num_iters_backward = num_iters_backward
         self.refresh_rate = self.num_iters_backward + self.num_iters_forward
@@ -100,7 +61,8 @@ class VariationalDiffusionTrainingRoutine():
         self.time_pts = self.time_pts.to(device=data.device)
         if self.sb.is_augmented:
             data = losses.augment_data(data)
-        in_cond = self.sampling_sb.prior_sampling((*data.shape,),device=data.device)
+        in_cond = self.sampling_sb.prior_sampling((*data.shape,),device=data.device) if self.adaptive_prior \
+                else torch.randn(*data.shape, device=data.device)
         xt, trajectories, frozen_policy = self.sampling_sb.get_trajectories_for_loss(in_cond, self.time_pts,forward=False,cond=cond)
         self.trajectories = trajectories.detach_()
         self.frozen_policy = frozen_policy.detach_()      
@@ -143,13 +105,13 @@ class VariationalDiffusionTrainingRoutine():
         stage = self.get_training_stage(itr)
         opt, sched, ema = (self.opt_f, self.sched_f, self.ema_f) if \
             stage == 'forward' else (self.opt_b, self.sched_b, self.ema_b)
-        
+        model = self.sb.At if stage == 'forward' else self.sb.backward_score 
         opt.zero_grad()
         loss = self.get_loss(itr,data,cond)
         loss.backward()
         
         
-        # torch.nn.utils.clip_grad_norm_(model_backward.parameters(), 1)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
         
         opt.step()
         sched.step()
@@ -169,7 +131,7 @@ class EvalLossRoutine():
         loss = self.loss_fn(self.sde, data,cond)
         loss.backward()
         self.opt.step()
-        # self.sched.step()
+        self.sched.step()
         return loss
 
 def get_routine(opts, sde,sampling_sde,opt_b, sched_b, ema_backward, opt_f, sched_f, ema_forward):

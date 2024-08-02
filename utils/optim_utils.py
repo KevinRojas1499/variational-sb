@@ -5,7 +5,7 @@ from ema_pytorch import EMA
 def build_optimizer_ema_sched(model, name, lr, weight_decay=0.0):
     optim_name = {
         'adam': Adam,
-        'adamW': AdamW,
+        'adamw': AdamW,
         'adagrad': Adagrad,
         'rmsprop': RMSprop,
         'sgd': SGD,

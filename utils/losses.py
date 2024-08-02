@@ -79,34 +79,7 @@ def cld_loss(sde : SDEs.CLD,data,cond=None):
 #         Schrodinger Losses          #
 #######################################
 
-def joint_sb_loss(sde : SDEs.SchrodingerBridge, in_cond, time_pts):
-    # This corresponds to joint training
-    # We assume that time_pts is a uniform discretization of the interval [0,T]
-    # We also assume that f has constant divergence
-    xt, trajectories, forward_scores = sde.get_trajectories_for_loss(in_cond, time_pts)
-    batch_size, d = xt.shape[0], xt.shape[-1]
-    dt = time_pts[1]-time_pts[0] 
-    
-    # We now compute the loss fn, we first need to do some reshaping
-    time_pts_shaped = time_pts.repeat(batch_size)
-    bt = sde.beta(time_pts_shaped)
-    flat_traj = trajectories.reshape(-1,d).requires_grad_(True)
-    backward_scores =  bt**.5 * sde.backward_score(flat_traj,time_pts_shaped) # Backward policies as described in the FBSDE paper
-    
-    if sde.is_augmented:
-        backward_scores*= sde.gamma**.5
-        aug_backward_score = torch.cat((torch.zeros_like(backward_scores),backward_scores),dim=1)
-        div_term = (sde.gamma * bt)**.5 * hutch_div(aug_backward_score,flat_traj,time_pts_shaped) 
-    else:
-        div_term = bt**.5 * hutch_div(backward_scores,flat_traj,time_pts_shaped) 
-        
-    loss = .5 * torch.sum((backward_scores + forward_scores.view(-1,backward_scores.shape[-1]))**2)/batch_size \
-      + torch.sum(div_term)/batch_size
-    loss = dt * loss
-    loss += .5 * torch.sum(xt**2)/batch_size
-    return loss
-
-def alternate_sb_loss(sde : SDEs.SchrodingerBridge,trajectories, frozen_policy, time_pts, optimize_forward):
+def alternate_sb_loss(sde : SDEs.LinearSchrodingerBridge,trajectories, frozen_policy, time_pts, optimize_forward):
     # This corresponds to alternate training
     # We assume that time_pts is a uniform discretization of the interval [0,T]
     # We also assume that f has constant divergence
@@ -140,22 +113,13 @@ def alternate_sb_loss(sde : SDEs.SchrodingerBridge,trajectories, frozen_policy, 
     loss = dt * loss
     return loss
 
-def standard_sb_loss(sde : SDEs.SchrodingerBridge, data):
-    n_times = 100
-    time_pts = torch.linspace(0., sde.T,n_times, device=data.device)
-    
-    if sde.is_augmented:
-        v_noise = torch.randn_like(data)
-        data = torch.cat((data,v_noise),dim=1)
-
-    return joint_sb_loss(sde,data,time_pts)
 
 
 def augment_data(data):
     v_noise = torch.randn_like(data)
     return torch.cat((data,v_noise),dim=1)
 
-def standard_alternate_sb_loss(sde : SDEs.SchrodingerBridge, data,optimize_forward, sampling_sde: SDEs.SchrodingerBridge):
+def standard_alternate_sb_loss(sde , data,optimize_forward, sampling_sde):
     n_times = 100
     time_pts = torch.linspace(0., sde.T,n_times, device=data.device)
     
@@ -170,11 +134,6 @@ def standard_alternate_sb_loss(sde : SDEs.SchrodingerBridge, data,optimize_forwa
 def get_loss(sde_name, is_alternate_training):
     if sde_name == 'vp':
         return dsm_loss
-    elif sde_name in ('sb','momentum-sb'):
-        if is_alternate_training:
-            return standard_alternate_sb_loss
-        else:
-            return standard_sb_loss
     elif sde_name in ('linear-sb','linear-momentum-sb'):
         return linear_sb_loss
     elif sde_name == 'cld':

@@ -166,45 +166,54 @@ class EDM(LinearSDE):
   def prior_sampling(self, shape, device):
     return torch.randn(*shape, dtype=torch.float, device=device) * self.marginal_prob_std(self.T)
 
-class SchrodingerBridge(SDE):
+class LinearSchrodingerBridge(LinearSDE):
   """ 
     Note that this is not a general SB, it is implemented so that after optimized
-    the linear drift transports to a standard normal, it also only works for f(Xt,t) = -.5 bt Xt
+    the linear drift transports to a standard normal
   """
-  def __init__(self, T=1.,delta=1e-3, beta_max=10, forward_score=None, backward_model=None, is_augmented=False):
-    SDE.__init__(self,is_augmented=is_augmented)
+  def __init__(self,T=1.,delta=1e-3, beta_max=10, forward_model=None, backward_model=None):
+    """ Here the backward model is a standard backwards score
+        The forward model is such that it receives t of shape [bs] and outputs a matrix [bs, shape of input]
+        The dimension is infered from the forward model, so if it doesn't behave in this way it won't work
+        We internally assign the forward model to be the multiplication against this matrix
+    """
+    LinearSDE.__init__(self,backward_model=backward_model, is_augmented=False)
+    self.forward_score = forward_model
     self._T = T
-    self.delta = delta
     self.beta_max = beta_max
-    self.forward_score = forward_score
-    self.backward_score = backward_model
-
+    self.delta = delta
+    
   @property
   def T(self):
     return self._T
-  
+
   def beta(self, t):
     return self.beta_max
   
   def beta_int(self, t):
     return self.beta_max * t
   
+  @property
+  def forward_score(self):
+    return lambda x,t, cond=None : self.At(t) *  x
+  
+  @forward_score.setter
+  def forward_score(self,forward_model):
+    self.At = forward_model
+    
+  def diffusion(self, x, t, forward=True):
+    return self.beta(t)**.5
+    
   def drift(self, x,t, forward=True, cond=None):
     beta = self.beta(t)
     if forward:
       return -.5 * beta * x + beta * self.forward_score(x,t,cond)
     else:
-      return -.5 * beta * x - beta * self.backward_score(x,t,cond)
-  
-  def diffusion(self, x,t):
-    return self.beta(t)**.5
-   
-  def prior_sampling(self, shape, device):
-    return torch.randn(*shape, dtype=torch.float, device=device)
+      return -.5 * beta * x + beta * self.forward_score(x,t,cond) - beta * self.backward_score(x,t,cond)
 
   def probability_flow_drift(self, xt, t, cond=None):
     beta = self.beta(t)
-    return -.5 * beta * (xt - self.forward_score(xt,t,cond) \
+    return -.5 * beta * (xt - 2 * self.forward_score(xt,t,cond) \
       + self.backward_score(xt, t,cond))
 
   def get_trajectories_for_loss(self, in_cond, time_pts,forward=True, cond=None):
@@ -235,124 +244,9 @@ class SchrodingerBridge(SDE):
       if forward:
         xt = xt + (-.5 * bt * xt + bt**.5 * policy) * dt + torch.randn_like(xt) * self.diffusion(xt,t) * dt.abs().sqrt()
       else:
-        xt = xt + (-.5 * bt * xt - bt**.5 * policy) * dt + torch.randn_like(xt) * self.diffusion(xt,t) * dt.abs().sqrt()
+        xt = xt + (-.5 * bt * xt - -.5 * bt * xt + bt * self.forward_score(xt,t_shape,cond) - bt * policy) * dt + torch.randn_like(xt) * self.diffusion(xt,t) * dt.abs().sqrt()
         
     return xt,trajectories,policies
-    
-class MomentumSchrodingerBridge(SchrodingerBridge):
-  """ 
-    Note that this is not a general SB, it is implemented so that after optimized
-    the linear drift transports to a standard normal
-  """
-  def __init__(self,T=1.,delta=1e-3, gamma=2., beta_max=10, forward_model=None, backward_model=None):
-    """ Here the backward model is a standard backwards score
-        The forward model is such that it receives t of shape [bs,1] and outputs a matrix [bs, d,2d]
-        The dimension is infered from the forward model, so if it doesn't behave in this way it won't work
-        We internally assign the forward model to be the multiplication against this matrix
-    """
-    SchrodingerBridge.__init__(self, T, delta, beta_max, forward_model, backward_model, is_augmented=True)
-    self.gamma = gamma
-
-  @property
-  def T(self):
-    return self._T
-
-  def probability_flow_drift(self,z,t, cond=None):
-    beta = self.beta(t)
-    xt,vt = z.chunk(2,dim=1)
-    v_drift = -xt -self.gamma * vt + self.gamma * (self.forward_score(z,t,cond) - self.backward_score(z,t,cond))
-    return .5 * beta * torch.cat((vt,v_drift),dim=1)
-      
-  def drift(self,z,t, forward=True,cond=None):
-    beta = self.beta(t)
-    xt,vt = z.chunk(2,dim=1)
-    if forward:
-      v_drift = -xt - self.gamma * vt + 2 * self.gamma * self.forward_score(z,t,cond)
-      return .5 * beta * torch.cat((vt, v_drift),dim=1)
-    else:
-      v_drift = -xt - self.gamma * vt - 2 * self.gamma * self.backward_score(z,t,cond)
-      return .5 * beta * torch.cat((vt,v_drift),dim=1)
-    
-  def diffusion(self, z,t):
-    # This was done in an effort to unify the sampling for all the methods
-    x,v = torch.chunk(z,2,dim=1)
-    zeros = torch.zeros_like(x)
-    ones = torch.ones_like(v)
-    return (self.beta(t) * self.gamma)**.5 * torch.cat((zeros,ones),dim=1)
-  
-  
-  def get_trajectories_for_loss(self, in_cond, time_pts,forward=True,cond=None):
-    n_time_pts = time_pts.shape[0]
-    
-    zt = in_cond.detach().clone().requires_grad_(True)
-    batch_size = zt.shape[0]
-    trajectories = torch.empty((in_cond.shape[0], n_time_pts, *in_cond.shape[1:]),device=in_cond.device) 
-    policies = torch.empty((in_cond.shape[0], n_time_pts, in_cond.shape[1]//2, *in_cond.shape[2:]),device=in_cond.device) 
-    cur_score = self.forward_score if forward else self.backward_score
-    for i, t in enumerate(time_pts):
-      if not forward:
-        t = self.T - t
-      t_shape = t.expand(batch_size)
-      
-      bt = self.beta(t)
-      policy = (self.gamma * bt)**.5 * cur_score(zt,t_shape,cond) # g * fw_score
-      save_idx = i if forward else -(i+1)
-      trajectories[:,save_idx] = zt
-      policies[:,save_idx] = policy
-      
-      if i == n_time_pts - 1:
-        break
-      # First we compute everything, we then take an euler step
-      dt = time_pts[i+1] - time_pts[i]
-      dt = dt if forward else -dt
-      xt,vt = zt.chunk(2,dim=1)
-      x_drift = .5 * bt * vt * dt
-      if forward:
-        v_drift = (.5 * bt * (-xt - self.gamma * vt) + (self.gamma * bt)**.5 * policy) * dt \
-            + torch.randn_like(vt) * (self.gamma * bt * dt).abs().sqrt()
-      else:
-        v_drift = (.5 * bt * (-xt - self.gamma * vt) - (self.gamma * bt)**.5 * policy) * dt \
-          + torch.randn_like(vt) * (self.gamma * bt * dt).abs().sqrt()
-      zt = torch.cat((xt + x_drift,vt + v_drift),dim=1)
-    # Forward scores really are the forward policy as described in the FBSDE paper
-    return zt,trajectories,policies
-
-
-class LinearSchrodingerBridge(SchrodingerBridge, LinearSDE):
-  """ 
-    Note that this is not a general SB, it is implemented so that after optimized
-    the linear drift transports to a standard normal
-  """
-  def __init__(self,T=1.,delta=1e-3, beta_max=10, forward_model=None, backward_model=None):
-    """ Here the backward model is a standard backwards score
-        The forward model is such that it receives t of shape [bs] and outputs a matrix [bs, shape of input]
-        The dimension is infered from the forward model, so if it doesn't behave in this way it won't work
-        We internally assign the forward model to be the multiplication against this matrix
-    """
-    SchrodingerBridge.__init__(self,T,delta,beta_max,is_augmented=False)
-    LinearSDE.__init__(self,backward_model=backward_model, is_augmented=False)
-    self.forward_score = forward_model
-
-  @property
-  def forward_score(self):
-    return lambda x,t, cond=None : self.At(t) *  x
-  
-  @forward_score.setter
-  def forward_score(self,forward_model):
-    self.At = forward_model
-    
-  def drift(self, x,t, forward=True, cond=None):
-    beta = self.beta(t)
-    if forward:
-      return -.5 * beta * x + beta * self.forward_score(x,t,cond)
-    else:
-      return -.5 * beta * x + beta * self.forward_score(x,t,cond) - beta * self.backward_score(x,t,cond)
-  
-  def probability_flow_drift(self, xt, t, cond=None):
-    beta = self.beta(t)
-    return -.5 * beta * (xt - 2 * self.forward_score(xt,t,cond) \
-      + self.backward_score(xt, t,cond))
-
   
   def integrate_forward_score(self, t):
     # Curently using Simpsons Method\
@@ -390,7 +284,7 @@ class LinearSchrodingerBridge(SchrodingerBridge, LinearSDE):
     scale, std = self.get_transition_params(noise,t)
     return std * noise
 
-class LinearMomentumSchrodingerBridge(MomentumSchrodingerBridge, LinearSDE):
+class LinearMomentumSchrodingerBridge(LinearSDE):
   """ 
     Note that this is not a general SB, it is implemented so that after optimized
     the linear drift transports to a standard normal
@@ -401,10 +295,23 @@ class LinearMomentumSchrodingerBridge(MomentumSchrodingerBridge, LinearSDE):
         The dimension is infered from the forward model, so if it doesn't behave in this way it won't work
         We internally assign the forward model to be the multiplication against this matrix
     """
-    MomentumSchrodingerBridge.__init__(self,T,delta,gamma,beta_max,forward_model,backward_model)
     LinearSDE.__init__(self,backward_model=backward_model, is_augmented=True)
     self.forward_score = forward_model
+    self._T = T
+    self.beta_max = beta_max
+    self.delta = delta
+    self.gamma = gamma
+    
+  @property
+  def T(self):
+    return self._T
 
+  def beta(self, t):
+    return self.beta_max
+  
+  def beta_int(self, t):
+    return self.beta_max * t
+  
   @property
   def forward_score(self):
     def f_score(z,t,cond=None):
@@ -434,9 +341,45 @@ class LinearMomentumSchrodingerBridge(MomentumSchrodingerBridge, LinearSDE):
         - 2 * self.gamma * self.backward_score(z,t,cond)
       return .5 * beta * torch.cat((vt,v_drift),dim=1)
     
-  @property
-  def T(self):
-    return self._T
+  
+  def get_trajectories_for_loss(self, in_cond, time_pts,forward=True,cond=None):
+    n_time_pts = time_pts.shape[0]
+    
+    zt = in_cond.detach().clone().requires_grad_(True)
+    batch_size = zt.shape[0]
+    trajectories = torch.empty((in_cond.shape[0], n_time_pts, *in_cond.shape[1:]),device=in_cond.device) 
+    policies = torch.empty((in_cond.shape[0], n_time_pts, in_cond.shape[1]//2, *in_cond.shape[2:]),device=in_cond.device) 
+    cur_score = self.forward_score if forward else self.backward_score
+    for i, t in enumerate(time_pts):
+      if not forward:
+        t = self.T - t
+      t_shape = t.expand(batch_size)
+      
+      bt = self.beta(t)
+      policy = (self.gamma * bt)**.5 * cur_score(zt,t_shape,cond) # g * fw_score
+      save_idx = i if forward else -(i+1)
+      trajectories[:,save_idx] = zt
+      policies[:,save_idx] = policy
+      
+      if i == n_time_pts - 1:
+        break
+      # First we compute everything, we then take an euler step
+      dt = time_pts[i+1] - time_pts[i]
+      dt = dt if forward else -dt
+      xt,vt = zt.chunk(2,dim=1)
+      x_drift = .5 * bt * vt * dt
+      if forward:
+        v_drift = (.5 * bt * (-xt - self.gamma * vt) + (self.gamma * bt)**.5 * policy) * dt \
+            + torch.randn_like(vt) * (self.gamma * bt * dt).abs().sqrt()
+      else:
+        v_drift = (.5 * bt * (-xt - self.gamma * vt) + self.gamma * bt * self.forward_score(zt,t_shape,cond) \
+          - (self.gamma * bt)**.5 * policy) * dt \
+          + torch.randn_like(vt) * (self.gamma * bt * dt).abs().sqrt()
+          
+        
+      zt = torch.cat((xt + x_drift,vt + v_drift),dim=1)
+    # Forward scores really are the forward policy as described in the FBSDE paper
+    return zt,trajectories,policies
   
   def integrate_forward_score(self, t):
     # Curently using Simpsons Method\
@@ -507,8 +450,8 @@ class LinearMomentumSchrodingerBridge(MomentumSchrodingerBridge, LinearSDE):
 
   def prior_sampling(self, shape, device):
     noise = torch.randn(shape, device=device)
-    t = (torch.ones(noise.shape[0], device=device) * self.T).view(-1,*([1] * (len(noise.shape) - 1)))
-    H, L, = self.get_transition_params(noise,t)
+    t = (torch.ones(noise.shape[0], device=device) * self.T).view(-1,*([1] * len(noise.shape[1:])))
+    H, L = self.get_transition_params(noise,t)
     noise_x, noise_v = torch.chunk(noise,2, dim=1)
     n_noise_x = L[...,0,0] * noise_x
     n_noise_v = L[...,0,1] * noise_x + L[...,1,1] * noise_v
@@ -621,13 +564,9 @@ def get_sde(sde_name):
     return VP()
   elif sde_name == 'edm':
     return EDM()
-  elif sde_name == 'sb':
-    return SchrodingerBridge()
   elif sde_name == 'linear-sb':
     return LinearSchrodingerBridge()
   elif sde_name == 'cld':
     return CLD()
-  elif sde_name == 'momentum-sb':
-    return MomentumSchrodingerBridge()
   elif sde_name == 'linear-momentum-sb':
     return LinearMomentumSchrodingerBridge()
