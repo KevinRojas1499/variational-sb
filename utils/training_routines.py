@@ -44,8 +44,16 @@ class AlternateTrainingRoutine():
 
 class VariationalDiffusionTrainingRoutine():
     def __init__(self,sb : SDEs.LinearSchrodingerBridge, sampling_sb : SDEs.LinearSchrodingerBridge,
+                 opt_f, sched_f, ema_f, opt_b, sched_b, ema_b,
                  num_iters_dsm_warm_up, num_iters_middle, num_iters_dsm_cool_down,
                  num_iters_forward, num_iters_backward, n_time_pts):
+        self.opt_f = opt_f
+        self.sched_f = sched_f
+        self.ema_f = ema_f
+        self.opt_b = opt_b
+        self.sched_b = sched_b
+        self.ema_b = ema_b
+        
         self.sb = sb
         self.sampling_sb = sampling_sb
         self.model_forward = self.sb.At
@@ -108,7 +116,7 @@ class VariationalDiffusionTrainingRoutine():
         self.freeze_models(optimizing_forward=False)    
             
                 
-    def training_iteration(self, itr, data,cond=None):
+    def get_loss(self, itr, data,cond=None):
         prev_stage = self.get_training_stage(itr-1)
         stage = self.get_training_stage(itr)
         if stage == 'dsm':
@@ -130,18 +138,46 @@ class VariationalDiffusionTrainingRoutine():
             rand_idx = torch.randint(0,data.shape[0],(100,), device=data.device)
             
             return losses.alternate_sb_loss(self.sb,self.trajectories[rand_idx],self.frozen_policy[rand_idx],self.time_pts,optimize_forward=True)
+
+    def training_iteration(self, itr, data,cond=None):
+        stage = self.get_training_stage(itr)
+        opt, sched, ema = (self.opt_f, self.sched_f, self.ema_f) if \
+            stage == 'forward' else (self.opt_b, self.sched_b, self.ema_b)
+        
+        opt.zero_grad()
+        loss = self.get_loss(itr,data,cond)
+        loss.backward()
+        
+        
+        # torch.nn.utils.clip_grad_norm_(model_backward.parameters(), 1)
+        
+        opt.step()
+        sched.step()
+        ema.update()
+        
+        return loss
+
 class EvalLossRoutine():
-    def __init__(self, sde, loss_fn):
+    def __init__(self, sde, loss_fn, opt, sched):
         self.sde = sde
         self.loss_fn = loss_fn
+        self.opt = opt
+        self.sched = sched
     
     def training_iteration(self, itr, data,cond=None):
-        return self.loss_fn(self.sde, data,cond)
+        self.opt.zero_grad()
+        loss = self.loss_fn(self.sde, data,cond)
+        loss.backward()
+        self.opt.step()
+        # self.sched.step()
+        return loss
 
-def get_routine(sde, sampling_sde, opts):
+def get_routine(opts, sde,sampling_sde,opt_b, sched_b, ema_backward, opt_f, sched_f, ema_forward):
     if isinstance(sde,(SDEs.VP, SDEs.CLD)):
-        return EvalLossRoutine(sde=sde, loss_fn=losses.get_loss(opts.sde, is_alternate_training=False))
+        return EvalLossRoutine(sde=sde, loss_fn=losses.get_loss(opts.sde, is_alternate_training=False),
+                               opt=opt_b, sched=sched_b)
     else:
-        return VariationalDiffusionTrainingRoutine(sde,sampling_sde,
-                                                      opts.dsm_warm_up,opts.num_iters-opts.dsm_warm_up - opts.dsm_cool_down, opts.dsm_cool_down,
-                                                      opts.forward_opt_steps, opts.backward_opt_steps,100)
+        return VariationalDiffusionTrainingRoutine(sde,sampling_sde,\
+            opt_f, sched_f, ema_forward, opt_b, sched_b, ema_backward,
+            opts.dsm_warm_up,opts.num_iters-opts.dsm_warm_up - opts.dsm_cool_down, opts.dsm_cool_down,
+            opts.forward_opt_steps, opts.backward_opt_steps,100)

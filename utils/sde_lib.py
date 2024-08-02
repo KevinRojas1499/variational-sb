@@ -340,6 +340,19 @@ class LinearSchrodingerBridge(SchrodingerBridge, LinearSDE):
   @forward_score.setter
   def forward_score(self,forward_model):
     self.At = forward_model
+    
+  def drift(self, x,t, forward=True, cond=None):
+    beta = self.beta(t)
+    if forward:
+      return -.5 * beta * x + beta * self.forward_score(x,t,cond)
+    else:
+      return -.5 * beta * x + beta * self.forward_score(x,t,cond) - beta * self.backward_score(x,t,cond)
+  
+  def probability_flow_drift(self, xt, t, cond=None):
+    beta = self.beta(t)
+    return -.5 * beta * (xt - 2 * self.forward_score(xt,t,cond) \
+      + self.backward_score(xt, t,cond))
+
   
   def integrate_forward_score(self, t):
     # Curently using Simpsons Method\

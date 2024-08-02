@@ -98,6 +98,7 @@ def training(**opts):
     opt_b, ema_backward, sched_b = build_optimizer_ema_sched(model_backward,opts.optimizer,opts.lr)
     sde.backward_score, sampling_sde.backward_score = model_backward, ema_backward
     print(f"Backward Model parameters: {sum(p.numel() for p in model_backward.parameters() if p.requires_grad)//1e6} M")
+    opt_f, ema_forward, sched_f = None, None, None
     if is_sb:
         # We need a forward model
         model_forward  = get_model(opts.model_forward,sde,device,network_opts=network_opts)
@@ -121,7 +122,7 @@ def training(**opts):
     
     num_iters = opts.num_iters
     log_sample_quality=opts.log_rate
-    routine = get_routine(sde,sampling_sde,opts)
+    routine = get_routine(opts, sde,sampling_sde,opt_b, sched_b, ema_backward, opt_f, sched_f, ema_forward)
 
     if enable_wandb:
         init_wandb(opts)
@@ -135,29 +136,18 @@ def training(**opts):
             cond = cond.to(device)
             
         data = data.to(device)
-        opt_f.zero_grad()
-        opt_b.zero_grad()
         
         loss = routine.training_iteration(i,data, cond)           
-        loss.backward()
-        
-        if opts.clip_grads:
-            torch.nn.utils.clip_grad_norm_(model_forward.parameters(),1)
-            torch.nn.utils.clip_grad_norm_(model_backward.parameters(), 1)
-        
-        opt_f.step()
-        opt_b.step()
-        
-        # Update EMA
-        if all(not param.requires_grad for param in model_backward.parameters()):
-            ema_backward.update()
-        if is_sb and all(not param.requires_grad for param in model_forward.parameters()):
-            ema_forward.update()
         
         if enable_wandb:
             wandb.log({
                 'loss': loss
             })
+        
+        if (i+1)%100 == 0:
+            pbar.set_description(f'loss {loss : .3f} \
+                                 lr_b {opt_b.param_groups[0]['lr'] : .5f} \
+                                 lr_f {opt_f.param_groups[0]['lr'] : .5f}')
         # Evaluate sample accuracy
         if (i+1)%log_sample_quality == 0 or i+1 == num_iters:
             print('Model\n', model_forward.Lambda)

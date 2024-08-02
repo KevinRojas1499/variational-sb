@@ -26,7 +26,7 @@ def build_optimizer_ema_sched(model, name, lr, weight_decay=0.0):
     ema = EMA(model, beta=0.99) 
     cur_lr_gamma = lr
     if cur_lr_gamma < 1.0:
-        sched = lr_scheduler.StepLR(optimizer, step_size=1000, gamma=cur_lr_gamma)
+        sched = lr_scheduler.StepLR(optimizer, step_size=1000, gamma=.99)
     else:
         sched = None
 
