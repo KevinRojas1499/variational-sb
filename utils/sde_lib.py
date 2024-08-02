@@ -417,7 +417,23 @@ class LinearMomentumSchrodingerBridge(MomentumSchrodingerBridge, LinearSDE):
   def forward_score(self,forward_model):
     self.At = forward_model
   
-
+  def probability_flow_drift(self,z,t, cond=None):
+    beta = self.beta(t)
+    xt,vt = z.chunk(2,dim=1)
+    v_drift = -xt -self.gamma * vt + self.gamma * (2 * self.forward_score(z,t,cond) - self.backward_score(z,t,cond))
+    return .5 * beta * torch.cat((vt,v_drift),dim=1)
+      
+  def drift(self,z,t, forward=True,cond=None):
+    beta = self.beta(t)
+    xt,vt = z.chunk(2,dim=1)
+    if forward:
+      v_drift = -xt - self.gamma * vt + 2 * self.gamma * self.forward_score(z,t,cond)
+      return .5 * beta * torch.cat((vt, v_drift),dim=1)
+    else:
+      v_drift = -xt - self.gamma * vt + 2 * self.gamma * self.forward_score(z,t,cond) \
+        - 2 * self.gamma * self.backward_score(z,t,cond)
+      return .5 * beta * torch.cat((vt,v_drift),dim=1)
+    
   @property
   def T(self):
     return self._T

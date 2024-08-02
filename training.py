@@ -145,9 +145,9 @@ def training(**opts):
             })
         
         if (i+1)%100 == 0:
-            pbar.set_description(f'loss {loss : .3f} \
-                                 lr_b {opt_b.param_groups[0]['lr'] : .5f} \
-                                 lr_f {opt_f.param_groups[0]['lr'] : .5f}')
+            lr_b = opt_b.param_groups[0]['lr'] 
+            lr_f = opt_f.param_groups[0]['lr']
+            pbar.set_description(f'loss {loss : .3f} lr_b {lr_b : .5f} lr_f {lr_f : .5f}')
         # Evaluate sample accuracy
         if (i+1)%log_sample_quality == 0 or i+1 == num_iters:
             print('Model\n', model_forward.Lambda)
