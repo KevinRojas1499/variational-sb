@@ -29,7 +29,7 @@ class VariationalDiffusionTrainingRoutine():
         self.num_iters_middle_stage = num_iters_middle 
         self.num_iters_dsm_cool_down = num_iters_dsm_cool_down
         
-        self.adaptive_prior = False
+        self.adaptive_prior = True
         self.num_iters_forward = num_iters_forward
         self.num_iters_backward = num_iters_backward
         self.refresh_rate = self.num_iters_backward + self.num_iters_forward

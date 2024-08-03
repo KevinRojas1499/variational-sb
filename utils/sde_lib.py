@@ -407,16 +407,16 @@ class LinearMomentumSchrodingerBridge(LinearSDE):
     x_dim = np.prod(x.shape)//2 #Divide by 2 because is augmented
     M = torch.zeros((x_dim,2,2))
     at,ct = self.integrate_forward_score(t).chunk(2,dim=1)
-    betaaa = self.beta_int(t).expand_as(at).flatten()
+    beta_int = self.beta_int(t).expand_as(at).flatten()
     at = at.flatten()
     ct = ct.flatten()
+
+    M[:,0,1] = -beta_int
+    M[:,1,0] = beta_int - 2 * self.gamma * at
+    M[:,1,1] = self.gamma * beta_int - 2 * self.gamma * ct
   
-    M[:,0,1] = betaaa
-    M[:,1,0] = 2 * self.gamma * at - betaaa
-    M[:,1,1] = 2 * self.gamma * ct - self.gamma * betaaa
-  
-    M/=2
-    return M , betaaa
+    M/= -2
+    return M , beta_int
 
 
   def get_transition_params(self, z, t):

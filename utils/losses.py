@@ -10,7 +10,7 @@ from utils.diff import hutch_div
 def dsm_loss(sde : SDEs.LinearSDE,data, cond=None):
     eps = sde.delta
     times = (torch.rand((data.shape[0]),device=data.device) * (1-eps) + eps) * sde.T
-    ones = [1] * (len(data.shape)-1)
+    ones = [1] * len(data.shape[1:])
     
     shaped_t = times.reshape(-1,*ones)
     mean, variance = sde.marginal_prob(data,shaped_t)
@@ -43,7 +43,7 @@ def linear_sb_loss_given_params(sde : SDEs.LinearSDE, data, times, scale, std, c
 def linear_sb_loss(sde : SDEs.LinearSDE,data, cond=None):
     eps = sde.delta
     times = (torch.rand((data.shape[0]),device=data.device) * (1-eps) + eps) * sde.T
-    ones = [1] * (len(data.shape)-1)
+    ones = [1] * len(data.shape[1:])
     
     shaped_t = times.reshape(-1,*ones)
     mean, std = sde.marginal_prob(data,shaped_t)
