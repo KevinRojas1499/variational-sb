@@ -170,14 +170,14 @@ class DiffusionModel(nn.Module):
         self.sde.backward_score = self.backward_net
         if hasattr(self.sde,'forward_score'):
             self.sde.forward_score = self.forward_net
-        self.routine = get_routine(self.sde,self.sde,dotdict({
+        self.routine = get_routine(dotdict({
             'sde': sde,
             'dsm_warm_up': dsm_warm_up,
             'num_iters' : 2500, # TODO : Not hardcode this value, it is given under the assumption of 50 epochs
             'dsm_cool_down': dsm_cool_down,
             'backward_opt_steps': backward_opt_steps,
             'forward_opt_steps': forward_opt_steps
-        }))
+        }), self.sde,self.sde)
 
     def describe_inputs(self, batch_size=1) -> InputSpec:
         return InputSpec(
@@ -452,7 +452,7 @@ class DiffusionModel(nn.Module):
         observed_values: Tensor,
         step: int,
     ):
-        loss = self.routine.training_iteration(step,
+        loss = self.routine.get_loss(step,
                 data=target.reshape(-1,1,target.shape[-1]),
                 cond=rnn_outputs.reshape(-1,1,rnn_outputs.shape[-1]))
         return loss

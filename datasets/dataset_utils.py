@@ -9,9 +9,9 @@ def get_dataset(opts) -> MyDataset:
     ds_name = opts.dataset
     batch_size = opts.batch_size
     if  ds_name == 'spiral':
-        return Spiral(batch_size, x_scalar=0.4 * 3, y_scalar=3.2 * 3)
+        return Spiral(batch_size, x_scalar=0.4, y_scalar=3.2 * 2.5)
     elif ds_name == 'checkerboard':
-        return CheckerBoard(batch_size)
+        return CheckerBoard(batch_size,x_scalar=.4,y_scalar=12.)
     elif ds_name == 'mnist':
         dataset = MNIST('.', train=True, transform=transforms.Compose([transforms.ToTensor(),transforms.Resize((28,28))]), download=True)
         data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=4)

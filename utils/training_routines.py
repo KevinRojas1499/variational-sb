@@ -4,9 +4,9 @@ import utils.losses as losses
 
 class VariationalDiffusionTrainingRoutine():
     def __init__(self,sb : SDEs.LinearSchrodingerBridge, sampling_sb : SDEs.LinearSchrodingerBridge,
-                 opt_f, sched_f, ema_f, opt_b, sched_b, ema_b,
                  num_iters_dsm_warm_up, num_iters_middle, num_iters_dsm_cool_down,
-                 num_iters_forward, num_iters_backward, n_time_pts):
+                 num_iters_forward, num_iters_backward, n_time_pts,
+                 opt_f=None, sched_f=None, ema_f=None, opt_b=None, sched_b=None, ema_b=None):
         self.opt_f = opt_f
         self.sched_f = sched_f
         self.ema_f = ema_f
@@ -125,6 +125,9 @@ class EvalLossRoutine():
         self.loss_fn = loss_fn
         self.opt = opt
         self.sched = sched
+        
+    def get_loss(self, itr, data,cond=None):
+        return self.loss_fn(self.sde,data,cond)
     
     def training_iteration(self, itr, data,cond=None):
         self.opt.zero_grad()
@@ -134,12 +137,14 @@ class EvalLossRoutine():
         self.sched.step()
         return loss
 
-def get_routine(opts, sde,sampling_sde,opt_b, sched_b, ema_backward, opt_f, sched_f, ema_forward):
+def get_routine(opts, sde,sampling_sde,
+                opt_b=None, sched_b=None, ema_backward=None, 
+                opt_f=None, sched_f=None, ema_forward=None):
     if isinstance(sde,(SDEs.VP, SDEs.CLD)):
         return EvalLossRoutine(sde=sde, loss_fn=losses.get_loss(opts.sde, is_alternate_training=False),
                                opt=opt_b, sched=sched_b)
     else:
         return VariationalDiffusionTrainingRoutine(sde,sampling_sde,\
-            opt_f, sched_f, ema_forward, opt_b, sched_b, ema_backward,
             opts.dsm_warm_up,opts.num_iters-opts.dsm_warm_up - opts.dsm_cool_down, opts.dsm_cool_down,
-            opts.forward_opt_steps, opts.backward_opt_steps,100)
+            opts.forward_opt_steps, opts.backward_opt_steps,100,
+            opt_f, sched_f, ema_forward, opt_b, sched_b, ema_backward)

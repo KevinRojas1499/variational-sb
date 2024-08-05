@@ -153,7 +153,6 @@ def training(**opts):
         # Evaluate sample accuracy
         if (i+1)%log_sample_quality == 0 or i+1 == num_iters:
             if is_sb:
-                print('Model\n', model_forward.Lambda)
                 # print('EMA\n' ,  [param for param in ema_forward.parameters()])
             # Save Checkpoints
             path = os.path.join(opts.dir, f'itr_{i+1}/')

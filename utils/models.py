@@ -32,7 +32,8 @@ class MatrixTimeEmbedding(torch.nn.Module):
         self.real_dim = np.prod(out_shape)
         self.ones = [-1] * len(self.out_shape)
 
-        self.Lambda = nn.Parameter(torch.zeros(self.real_dim))
+        self.Lambda = nn.Parameter(.2 *torch.ones(self.real_dim))
+        # self.Lambda = nn.Parameter(torch.tensor([.18,.18,0.,0.]))
         
 
     def forward(self, t):
