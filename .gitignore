@@ -8,3 +8,4 @@
 *.gif
 time_series/results/
 results/
+/FashionMNIST/

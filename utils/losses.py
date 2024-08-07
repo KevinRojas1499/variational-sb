@@ -131,7 +131,7 @@ def standard_alternate_sb_loss(sde , data,optimize_forward, sampling_sde):
     
     return alternate_sb_loss(sde,trajectories,frozen_policy,time_pts,optimize_forward)
 
-def get_loss(sde_name, is_alternate_training):
+def get_loss(sde_name):
     if sde_name == 'vp':
         return dsm_loss
     elif sde_name in ('linear-sb','linear-momentum-sb'):

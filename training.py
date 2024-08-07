@@ -41,7 +41,7 @@ def plot_32_mnist(x_t,file_name='mnist_samples.jpeg'):
 def get_dataset_type(name):
     if name in ['spiral','checkerboard']:
         return 'toy'
-    elif name in ['mnist']:
+    elif name in ['mnist','fashion']:
         return 'image'
 
 def is_sb_sde(name):
@@ -59,7 +59,7 @@ def default_log_rate(ctx, param, value):
     return 5000 if is_sb_sde(sde) else 5000
 
 @click.command()
-@click.option('--dataset',type=click.Choice(['mnist','spiral','checkerboard']))
+@click.option('--dataset',type=click.Choice(['mnist','fashion','spiral','checkerboard']))
 @click.option('--model_forward',type=click.Choice(['linear']), default='linear')
 @click.option('--model_backward',type=click.Choice(['mlp','unet', 'linear', 'DiT']), default='mlp')
 @click.option('--precondition', is_flag=True, default=True)
@@ -92,7 +92,9 @@ def training(**opts):
     sampling_sde = get_sde(opts.sde)
     # Set up backwards model
     network_opts = dotdict({
-        'out_shape' : [dataset.out_shape[0] * (2 if sde.is_augmented else 1), *dataset.out_shape[1:]]
+        # 'out_shape' : [dataset.out_shape[0] * (2 if sde.is_augmented else 1), *dataset.out_shape[1:]]
+        'out_shape' : [2,28,28]
+        
     })
     model_backward = get_model(opts.model_backward,sde, device,network_opts=network_opts)
     opt_b, ema_backward, sched_b = build_optimizer_ema_sched(model_backward,opts.optimizer,opts.lr)
@@ -153,7 +155,7 @@ def training(**opts):
         # Evaluate sample accuracy
         if (i+1)%log_sample_quality == 0 or i+1 == num_iters:
             if is_sb:
-                # print('EMA\n' ,  [param for param in ema_forward.parameters()])
+                print('EMA\n' ,  [param for param in ema_forward.parameters()])
             # Save Checkpoints
             path = os.path.join(opts.dir, f'itr_{i+1}/')
             os.makedirs(path,exist_ok=True) # Still wondering it this is the best idea
@@ -164,14 +166,20 @@ def training(**opts):
                 torch.save(model_forward.state_dict(),os.path.join(path, 'forward.pt'))
                 torch.save(ema_forward.state_dict(),os.path.join(path, 'forward_ema.pt'))
                 
-            sampling_shape = (1000 if dataset_type else 32, *network_opts.out_shape)
-            new_data, _ = sde.sample(sampling_shape, device)
-            new_data_ema, _  = sampling_sde.sample(sampling_shape, device)
+            n_samples = 1000 if dataset_type == 'toy' else opts.batch_size
+            sampling_shape = (n_samples, *network_opts.out_shape)
+            # labels = torch.randint(0,10,(n_samples,),device=device) if cond is not None else None
+            labels = cond
+            
+            new_data, _ = sde.sample(sampling_shape, device,cond=cond)
+            new_data_ema, _  = sampling_sde.sample(sampling_shape, device, cond=cond)
             if dataset_type == 'toy':
                 relevant_log_info = toy_data_figs([data, new_data, new_data_ema], ['true','normal', 'ema'])
                 wandb.log(relevant_log_info)
             elif dataset_type == 'image':
                 plot_32_mnist(new_data,os.path.join(opts.dir,f'itr_{i+1}.png'))
+                plot_32_mnist(new_data,os.path.join(opts.dir,f'itr_ema_{i+1}.png'))
+                
 
             
     wandb.finish()

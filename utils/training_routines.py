@@ -141,7 +141,7 @@ def get_routine(opts, sde,sampling_sde,
                 opt_b=None, sched_b=None, ema_backward=None, 
                 opt_f=None, sched_f=None, ema_forward=None):
     if isinstance(sde,(SDEs.VP, SDEs.CLD)):
-        return EvalLossRoutine(sde=sde, loss_fn=losses.get_loss(opts.sde, is_alternate_training=False),
+        return EvalLossRoutine(sde=sde, loss_fn=losses.get_loss(opts.sde),
                                opt=opt_b, sched=sched_b)
     else:
         return VariationalDiffusionTrainingRoutine(sde,sampling_sde,\

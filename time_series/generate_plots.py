@@ -9,6 +9,9 @@ import matplotlib.pyplot as plt
 @click.option('--path', type=str)
 def generate_plots_and_stats(**opts):
     path = opts['path']
+    temp = path.split('/')[-1].split('_')
+    sde = temp[0]
+    dataset = temp[1]
     metrics   = os.path.join(path, 'metrics.json')
     file_path = os.path.join(path, 'forecasts.pickle')
 
@@ -47,9 +50,9 @@ def generate_plots_and_stats(**opts):
         ax.set_title(title)
 
     def create_fig(forecasts, targets, filename):
-        n_rows = 3
+        n_rows = 4
         fig,ax = plt.subplots(1,n_rows,figsize=(5 * n_rows, 5))
-        for i in range(3):
+        for i in range(n_rows):
             plot_dimensions(forecasts,targets,ax[i],i,f'Dimension {i}')
             
         fig.savefig(filename,bbox_inches='tight')
@@ -57,7 +60,7 @@ def generate_plots_and_stats(**opts):
 
         
         
-    create_fig(forecasts,targets,filename=os.path.join(path,'3-dimensions.png'))
+    create_fig(forecasts,targets,filename=os.path.join(path,f'{sde}_{dataset}.png'))
     
 if __name__ == '__main__':
     generate_plots_and_stats()
