@@ -45,7 +45,7 @@ def get_dataset_type(name):
         return 'image'
 
 def is_sb_sde(name):
-    return (name in ['vdsm','linear-momentum-sb'])
+    return (name in ['vsdm','linear-momentum-sb'])
 
 def default_num_iters(ctx, param, value):
     sde = ctx.params.get('sde')
@@ -63,7 +63,7 @@ def default_log_rate(ctx, param, value):
 @click.option('--model_forward',type=click.Choice(['linear']), default='linear')
 @click.option('--model_backward',type=click.Choice(['mlp','unet', 'linear', 'DiT']), default='mlp')
 @click.option('--precondition', is_flag=True, default=True)
-@click.option('--sde',type=click.Choice(['vp','cld','vdsm','linear-momentum-sb']), default='vp')
+@click.option('--sde',type=click.Choice(['vp','cld','vsdm','linear-momentum-sb']), default='vp')
 @click.option('--dsm_warm_up', type=int, default=0, help='Perform first iterations using just DSM')
 @click.option('--dsm_cool_down', type=int, default=0, help='Stop optimizing the forward model for these last iterations')
 @click.option('--forward_opt_steps', type=int, default=100, help='Number of forward opt steps in alternate training scheme')
@@ -172,7 +172,8 @@ def training(**opts):
             labels = cond
             
             new_data, _ = sde.sample(sampling_shape, device,cond=cond)
-            new_data_ema, _  = sampling_sde.sample(sampling_shape, device, cond=cond)
+            # new_data_ema, _  = sampling_sde.sample(sampling_shape, device, cond=cond)
+            new_data_ema = new_data
             if dataset_type == 'toy':
                 relevant_log_info = toy_data_figs([data, new_data, new_data_ema], ['true','normal', 'ema'])
                 wandb.log(relevant_log_info)

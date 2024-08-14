@@ -34,14 +34,16 @@ class MatrixTimeEmbedding(torch.nn.Module):
         self.is_augmented = is_augmented
         self.ones = [-1] * len(self.out_shape)
 
-        # self._lambda = nn.Parameter(.2 *torch.ones(self.real_dim))
-        self._lambda = nn.Parameter(torch.tensor([.248,.248]))
+        # self._lambda = nn.Parameter(.2 *torch.ones(2 *self.real_dim))
+        self._lambda = nn.Parameter(torch.tensor([0.,0.]))
     
     @property
     def Lambda(self):
         if self.is_augmented:
             lamb = self._lambda.reshape(1, *self.out_shape)
             lamb_v = .5 - 1/self.gamma * (1-2 * self.gamma * lamb).sqrt()
+            lamb_x = (1-(self.gamma - 2 * self.gamma * lamb)**2/4)/(2*self.gamma) 
+            return torch.cat((lamb_x,lamb),dim=1)
             return torch.cat((lamb,lamb_v),dim=1)
         
         return self._lambda.reshape(1, *self.out_shape)

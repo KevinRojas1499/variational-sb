@@ -7,6 +7,8 @@ import matplotlib.pyplot as plt
 def reshape_t(t, xt):
   ones = [1] * len(xt.shape[1:])
   return t.reshape(-1, *ones)
+
+k = 0
 class SDE(abc.ABC):
   def __init__(self, is_augmented):
     # Augmentation refers to adding momentum
@@ -53,11 +55,16 @@ class SDE(abc.ABC):
     for i, t in enumerate(time_pts):
       if return_traj:
         trajectories[:,i] = xt
-      plt.clf()
-      plt.xlim(-20,40)
-      plt.ylim(-20,40)
-      plt.scatter(xt[:,0].cpu().numpy(), xt[:,1].cpu().numpy())
-      plt.savefig(f'./trajectory/{i}.png')
+      if i == 0 or i == n_time_pts-1:
+        global k
+        plt.clf()
+        plt.xlim(-20,40)
+        plt.ylim(-20,40)
+        noise = torch.randn_like(xt)
+        plt.scatter(xt[:,0].cpu().numpy(), xt[:,1].cpu().numpy(),s=3,label='xt')
+        plt.scatter(noise[:,0].cpu().numpy(), noise[:,1].cpu().numpy(),s=3,alpha=.3, label='noise')
+        plt.legend()
+        plt.savefig(f'./trajectory/{i}_{k}.png')
       if i == n_time_pts - 1:
         break
       dt = time_pts[i+1] - t 
@@ -77,6 +84,8 @@ class SDE(abc.ABC):
         drift = self.drift(xt,t_shape, forward=(not backward),cond=cond)
         xt = xt + drift * dt + torch.randn_like(xt) * self.diffusion(xt,t) * dt.abs().sqrt()
 
+    k+=1
+    
     xt = xt.chunk(2,dim=1)[0] if self.is_augmented else xt
     return xt, (trajectories if return_traj else None)
 class LinearSDE(SDE):
@@ -295,7 +304,10 @@ class LinearSchrodingerBridge(LinearSDE):
     t = (torch.ones(noise.shape[0], device=device) * self.T).view(-1,*([1] * (len(noise.shape[1:]))))
     
     scale, std = self.get_transition_params(noise,t)
-    return std * noise
+    noise = std * noise 
+    print("COVARIANCE")
+    print(noise.var(dim=0))
+    return  noise
 
 class LinearMomentumSchrodingerBridge(LinearSDE):
   """ 
@@ -471,7 +483,10 @@ class LinearMomentumSchrodingerBridge(LinearSDE):
     noise_x, noise_v = torch.chunk(noise,2, dim=1)
     n_noise_x = L[...,0,0] * noise_x
     n_noise_v = L[...,0,1] * noise_x + L[...,1,1] * noise_v
-    return torch.cat((n_noise_x,n_noise_v),dim=1) 
+    noise = torch.cat((n_noise_x,n_noise_v),dim=1) 
+    print("COVARIANCE")
+    print(noise.var(dim=0))
+    return noise
 
 class CLD(SDE):
   # We assume that images have shape [B, C, H, W] 
@@ -582,7 +597,7 @@ def get_sde(sde_name):
     return VP()
   elif sde_name == 'edm':
     return EDM()
-  elif sde_name == 'vdsm':
+  elif sde_name == 'vsdm':
     return LinearSchrodingerBridge()
   elif sde_name == 'cld':
     return CLD()

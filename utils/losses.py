@@ -63,6 +63,7 @@ def linear_sb_loss(sde : SDEs.LinearSDE,data, cond=None):
 
 def cld_loss(sde : SDEs.CLD,data,cond=None):
     eps = sde.delta
+    eps = 1e-2
     times = (torch.rand((data.shape[0]) ,device=data.device) * (1-eps) + eps) * sde.T
     ones = [1] * (len(data.shape)-1)
     shaped_t = times.reshape(-1,*ones)
@@ -134,7 +135,7 @@ def standard_alternate_sb_loss(sde , data,optimize_forward, sampling_sde):
 def get_loss(sde_name):
     if sde_name == 'vp':
         return dsm_loss
-    elif sde_name in ('vdsm','linear-momentum-sb'):
+    elif sde_name in ('vsdm','linear-momentum-sb'):
         return linear_sb_loss
     elif sde_name == 'cld':
         return cld_loss

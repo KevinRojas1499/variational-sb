@@ -9,7 +9,7 @@ def get_dataset(opts) -> MyDataset:
     ds_name = opts.dataset
     batch_size = opts.batch_size
     if  ds_name == 'spiral':
-        return Spiral(batch_size, x_scalar=3, y_scalar=3)
+        return Spiral(batch_size, x_scalar=.4, y_scalar=3.2)
     elif ds_name == 'checkerboard':
         return CheckerBoard(batch_size,x_scalar=1.,y_scalar=7.)
     elif ds_name == 'mnist':
