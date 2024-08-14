@@ -46,7 +46,7 @@ def get_dataset_type(name):
         return 'time-series'
 
 def is_sb_sde(name):
-    return (name in ['sb','linear-sb','momentum-sb','linear-momentum-sb'])
+    return (name in ['vdsm','linear-momentum-sb'])
     
 def update_ema(model, model_ema, beta):
     for p_ema, p_net in zip(model_ema.parameters(), model.parameters()):
@@ -72,7 +72,7 @@ def default_log_rate(ctx, param, value):
 @click.option('--dataset',type=click.Choice(['mnist','spiral','checkerboard','exchange_rate','electricity_nips']))
 @click.option('--model_forward',type=click.Choice(['mlp','linear']), default='mlp')
 @click.option('--model_backward',type=click.Choice(['mlp','unet', 'linear','time-series']), default='mlp')
-@click.option('--sde',type=click.Choice(['vp','cld','sb','edm', 'linear-sb','momentum-sb','linear-momentum-sb']), default='vp')
+@click.option('--sde',type=click.Choice(['vp','cld','sb','edm', 'vdsm','momentum-sb','linear-momentum-sb']), default='vp')
 # Training Options
 @click.option('--batch_size', type=int, default=128)
 @click.option('--dir',type=str)

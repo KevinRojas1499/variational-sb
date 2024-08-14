@@ -45,13 +45,13 @@ def get_dataset_type(name):
         return 'image'
 
 def is_sb_sde(name):
-    return (name in ['sb','linear-sb','momentum-sb','linear-momentum-sb'])
+    return (name in ['vdsm','linear-momentum-sb'])
 
 def default_num_iters(ctx, param, value):
     sde = ctx.params.get('sde')
     if value is not None: 
         return value
-    return 100000 if is_sb_sde(sde) else 100000
+    return 30000 if is_sb_sde(sde) else 30000
 def default_log_rate(ctx, param, value):
     sde = ctx.params.get('sde')
     if value is not None: 
@@ -63,7 +63,7 @@ def default_log_rate(ctx, param, value):
 @click.option('--model_forward',type=click.Choice(['linear']), default='linear')
 @click.option('--model_backward',type=click.Choice(['mlp','unet', 'linear', 'DiT']), default='mlp')
 @click.option('--precondition', is_flag=True, default=True)
-@click.option('--sde',type=click.Choice(['vp','cld','linear-sb','linear-momentum-sb']), default='vp')
+@click.option('--sde',type=click.Choice(['vp','cld','vdsm','linear-momentum-sb']), default='vp')
 @click.option('--dsm_warm_up', type=int, default=0, help='Perform first iterations using just DSM')
 @click.option('--dsm_cool_down', type=int, default=0, help='Stop optimizing the forward model for these last iterations')
 @click.option('--forward_opt_steps', type=int, default=100, help='Number of forward opt steps in alternate training scheme')
@@ -72,7 +72,7 @@ def default_log_rate(ctx, param, value):
 @click.option('--optimizer',type=click.Choice(['adam','adamw']), default='adamw')
 @click.option('--lr', type=float, default=3e-4)
 @click.option('--ema_beta', type=float, default=.99)
-@click.option('--clip_grads', is_flag=True, default=False)
+@click.option('--clip_grads', is_flag=True, default=True)
 @click.option('--batch_size', type=int, default=128)
 @click.option('--log_rate',type=int,callback=default_log_rate)
 @click.option('--num_iters',type=int,callback=default_num_iters)
@@ -92,8 +92,8 @@ def training(**opts):
     sampling_sde = get_sde(opts.sde)
     # Set up backwards model
     network_opts = dotdict({
-        # 'out_shape' : [dataset.out_shape[0] * (2 if sde.is_augmented else 1), *dataset.out_shape[1:]]
-        'out_shape' : [2,28,28]
+        'out_shape' : dataset.out_shape
+        # 'out_shape' : [2,28,28]
         
     })
     model_backward = get_model(opts.model_backward,sde, device,network_opts=network_opts)
@@ -167,7 +167,7 @@ def training(**opts):
                 torch.save(ema_forward.state_dict(),os.path.join(path, 'forward_ema.pt'))
                 
             n_samples = 1000 if dataset_type == 'toy' else opts.batch_size
-            sampling_shape = (n_samples, *network_opts.out_shape)
+            sampling_shape = (n_samples, 4 if sde.is_augmented else 2)
             # labels = torch.randint(0,10,(n_samples,),device=device) if cond is not None else None
             labels = cond
             

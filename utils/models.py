@@ -26,16 +26,26 @@ class MLP(nn.Module):
         return self.out(x)
 
 class MatrixTimeEmbedding(torch.nn.Module):
-    def __init__(self, out_shape):
+    def __init__(self, out_shape, is_augmented=False, gamma=None):
         super(MatrixTimeEmbedding,self).__init__()
         self.out_shape = out_shape
         self.real_dim = np.prod(out_shape)
+        self.gamma = gamma
+        self.is_augmented = is_augmented
         self.ones = [-1] * len(self.out_shape)
 
-        self.Lambda = nn.Parameter(.2 *torch.ones(self.real_dim))
-        # self.Lambda = nn.Parameter(torch.tensor([.18,.18,0.,0.]))
+        # self._lambda = nn.Parameter(.2 *torch.ones(self.real_dim))
+        self._lambda = nn.Parameter(torch.tensor([.248,.248]))
+    
+    @property
+    def Lambda(self):
+        if self.is_augmented:
+            lamb = self._lambda.reshape(1, *self.out_shape)
+            lamb_v = .5 - 1/self.gamma * (1-2 * self.gamma * lamb).sqrt()
+            return torch.cat((lamb,lamb_v),dim=1)
         
-
+        return self._lambda.reshape(1, *self.out_shape)
+    
     def forward(self, t):
-        A = self.Lambda.reshape(1, *self.out_shape).expand(tuple([t.shape[0], *self.ones]))
+        A = self.Lambda.expand(tuple([t.shape[0], *self.ones]))
         return A

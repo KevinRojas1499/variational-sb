@@ -26,8 +26,7 @@ class PrecondCLD(nn.Module):
     def forward(self, zt,t,cond=None):
         xt,vt = zt.chunk(2,dim=1)
         lxx, lxv, lvv = self.sde.marginal_prob_std(t)
-        ones = [1] * (len(xt.shape)-1)
-        
+        ones = [1] * (len(xt.shape[1:]))
         return -vt/(lvv**2+lxv).view(-1,*ones) - self.net(zt,t,cond)/lvv.view(-1,*ones)
 
 class PrecondGeneral(nn.Module):
@@ -56,7 +55,8 @@ def get_model(name, sde : SDE, device, network_opts=None):
     if name == 'mlp':
         return MLP(2,augmented).requires_grad_(True).to(device=device)
     elif name == 'linear':
-        return MatrixTimeEmbedding(out_shape=network_opts.out_shape).requires_grad_(True).to(device=device)
+        gamma = sde.gamma if augmented else None
+        return MatrixTimeEmbedding(network_opts.out_shape,augmented,gamma).requires_grad_(True).to(device=device)
     elif name == 'unet':
         in_channels = network_opts.out_shape[0] 
         out_channels = in_channels//(2 if augmented else 1)

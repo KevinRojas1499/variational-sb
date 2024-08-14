@@ -92,7 +92,7 @@ def alternate_sb_loss(sde : SDEs.LinearSchrodingerBridge,trajectories, frozen_po
     
     # We now compute the loss fn, we first need to do some reshaping
     time_pts_shaped = time_pts.repeat(batch_size)
-    bt = sde.beta(time_pts_shaped)
+    bt = sde.beta(time_pts_shaped.reshape(-1, *([1] * len(data_shape))))
     flat_traj = trajectories.reshape(-1,*data_shape).requires_grad_(True)
     
     if optimize_forward:
@@ -134,7 +134,7 @@ def standard_alternate_sb_loss(sde , data,optimize_forward, sampling_sde):
 def get_loss(sde_name):
     if sde_name == 'vp':
         return dsm_loss
-    elif sde_name in ('linear-sb','linear-momentum-sb'):
+    elif sde_name in ('vdsm','linear-momentum-sb'):
         return linear_sb_loss
     elif sde_name == 'cld':
         return cld_loss

@@ -2,7 +2,11 @@
 import abc
 import torch
 import numpy as np
+import matplotlib.pyplot as plt
 
+def reshape_t(t, xt):
+  ones = [1] * len(xt.shape[1:])
+  return t.reshape(-1, *ones)
 class SDE(abc.ABC):
   def __init__(self, is_augmented):
     # Augmentation refers to adding momentum
@@ -34,7 +38,7 @@ class SDE(abc.ABC):
   @torch.no_grad()
   def sample(self, shape, device, backward=True, 
              in_cond=None, prob_flow=True, 
-             cond=None, n_time_pts=100, return_traj=False):
+             cond=None, n_time_pts=25, return_traj=False):
     xt = self.prior_sampling(shape,device) if backward else in_cond
     assert xt is not None
     # step_indices = torch.arange(n_time_pts, device=device)
@@ -49,6 +53,11 @@ class SDE(abc.ABC):
     for i, t in enumerate(time_pts):
       if return_traj:
         trajectories[:,i] = xt
+      plt.clf()
+      plt.xlim(-20,40)
+      plt.ylim(-20,40)
+      plt.scatter(xt[:,0].cpu().numpy(), xt[:,1].cpu().numpy())
+      plt.savefig(f'./trajectory/{i}.png')
       if i == n_time_pts - 1:
         break
       dt = time_pts[i+1] - t 
@@ -93,10 +102,12 @@ class VP(LinearSDE):
     return self._T
   
   def beta(self, t):
-    return self.beta_max
+    b_min = 0.01
+    return b_min+ t*(self.beta_max-b_min) # self.beta_max
   
   def beta_int(self, t):
-    return self.beta_max * t
+    b_min = 0.01
+    return  b_min * t +(self.beta_max-b_min) * t**2/2
   
   def marginal_prob(self, x, t):
     # If    x is of shape [B, H, W, C]
@@ -116,7 +127,7 @@ class VP(LinearSDE):
       return -.5 * beta * x - beta * self.backward_score(x,t,cond)
   
   def probability_flow_drift(self, xt, t,cond=None):
-    beta = self.beta(t)
+    beta = self.beta(t.reshape(-1,*([1] * len(xt.shape[1:]))))
     return -.5 * beta * (xt + self.backward_score(xt,t,cond))
   
   def diffusion(self, x,t):
@@ -188,10 +199,12 @@ class LinearSchrodingerBridge(LinearSDE):
     return self._T
 
   def beta(self, t):
-    return self.beta_max
+    b_min = 0.01
+    return b_min+ t*(self.beta_max-b_min) # self.beta_max
   
   def beta_int(self, t):
-    return self.beta_max * t
+    b_min = 0.01
+    return  b_min * t +(self.beta_max-b_min) * t**2/2 
   
   @property
   def forward_score(self):
@@ -212,7 +225,7 @@ class LinearSchrodingerBridge(LinearSDE):
       return -.5 * beta * x + beta * self.forward_score(x,t,cond) - beta * self.backward_score(x,t,cond)
 
   def probability_flow_drift(self, xt, t, cond=None):
-    beta = self.beta(t)
+    beta = self.beta(reshape_t(t,xt))
     return -.5 * beta * (xt - 2 * self.forward_score(xt,t,cond) \
       + self.backward_score(xt, t,cond))
 
@@ -279,7 +292,7 @@ class LinearSchrodingerBridge(LinearSDE):
 
   def prior_sampling(self, shape, device):
     noise = torch.randn(shape,device=device)
-    t = (torch.ones(noise.shape[0], device=device) * self.T).view(-1,*([1] * (len(noise.shape) - 1)))
+    t = (torch.ones(noise.shape[0], device=device) * self.T).view(-1,*([1] * (len(noise.shape[1:]))))
     
     scale, std = self.get_transition_params(noise,t)
     return std * noise
@@ -307,10 +320,12 @@ class LinearMomentumSchrodingerBridge(LinearSDE):
     return self._T
 
   def beta(self, t):
-    return self.beta_max
+    b_min = 0.01
+    return b_min+ t*(self.beta_max-b_min) # self.beta_max
   
   def beta_int(self, t):
-    return self.beta_max * t
+    b_min = 0.01
+    return  b_min * t +(self.beta_max-b_min) * t**2/2
   
   @property
   def forward_score(self):
@@ -325,7 +340,7 @@ class LinearMomentumSchrodingerBridge(LinearSDE):
     self.At = forward_model
   
   def probability_flow_drift(self,z,t, cond=None):
-    beta = self.beta(t)
+    beta = self.beta(reshape_t(t,z))
     xt,vt = z.chunk(2,dim=1)
     v_drift = -xt -self.gamma * vt + self.gamma * (2 * self.forward_score(z,t,cond) - self.backward_score(z,t,cond))
     return .5 * beta * torch.cat((vt,v_drift),dim=1)
@@ -392,8 +407,9 @@ class LinearMomentumSchrodingerBridge(LinearSDE):
     multipliers[2:-1:2] = 2
     Ats = self.At(time_pts.view(-1,1)) * self.beta(time_pts.view(-1,1))
     Ats = Ats.view(-1,num_pts, *Ats.shape[1:])
-    multipliers = multipliers.view(1,-1,*([1] * (len(Ats.shape)-2)))
+    multipliers = multipliers.view(1,-1,*([1] * len(Ats.shape[2:])))
     res = torch.sum(Ats * multipliers,dim=1) * dt.view(-1,*([1] * (len(Ats.shape)-2)))/3
+    # res = self.At(t) * self.beta_int(t)
     return res
     
   def diffusion(self, z,t):
@@ -455,7 +471,7 @@ class LinearMomentumSchrodingerBridge(LinearSDE):
     noise_x, noise_v = torch.chunk(noise,2, dim=1)
     n_noise_x = L[...,0,0] * noise_x
     n_noise_v = L[...,0,1] * noise_x + L[...,1,1] * noise_v
-    return torch.cat((n_noise_x,n_noise_v),dim=1) # notice that we are using that 
+    return torch.cat((n_noise_x,n_noise_v),dim=1) 
 
 class CLD(SDE):
   # We assume that images have shape [B, C, H, W] 
@@ -473,10 +489,12 @@ class CLD(SDE):
     return self._T
   
   def beta(self, t):
-    return self.beta_max/2 # I divide by 2 here so that it matches other parts of the code where we use -beta/2
+    b_min = 0.01
+    return (b_min+ t*(self.beta_max-b_min))/2 # self.beta_max
   
   def beta_int(self, t):
-    return self.beta_max  * t/2
+    b_min = 0.01
+    return  (b_min * t +(self.beta_max-b_min) * t**2/2)/2
   
   
   def get_exp_At_components(self, t):
@@ -544,7 +562,7 @@ class CLD(SDE):
 
   def probability_flow_drift(self, z,t,cond=None):
     x,v = torch.chunk(z,2,dim=1)
-    beta = self.beta(t)
+    beta = self.beta(reshape_t(t,z))
     d_x =  beta * v
     d_v =  beta * (-x - self.gamma * v)
     return torch.cat((d_x, d_v - self.gamma * beta * self.backward_score(z,t,cond)),dim=1)
@@ -564,7 +582,7 @@ def get_sde(sde_name):
     return VP()
   elif sde_name == 'edm':
     return EDM()
-  elif sde_name == 'linear-sb':
+  elif sde_name == 'vdsm':
     return LinearSchrodingerBridge()
   elif sde_name == 'cld':
     return CLD()
