@@ -80,7 +80,7 @@ def cld_loss(sde : SDEs.CLD,data,cond=None):
 #         Schrodinger Losses          #
 #######################################
 
-def alternate_sb_loss(sde : SDEs.LinearSchrodingerBridge,trajectories, frozen_policy, time_pts, optimize_forward):
+def alternate_sb_loss(sde : SDEs.VSDM,trajectories, frozen_policy, time_pts, optimize_forward):
     # This corresponds to alternate training
     # We assume that time_pts is a uniform discretization of the interval [0,T]
     # We also assume that f has constant divergence

@@ -2,7 +2,7 @@ import torch.nn as nn
 import torch
 from typing import Union
 
-from utils.sde_lib import SDE, VP, CLD, LinearMomentumSchrodingerBridge, LinearSchrodingerBridge
+from utils.sde_lib import SDE, VP, CLD, LinearMomentumSchrodingerBridge, VSDM
 from utils.models import MLP, MatrixTimeEmbedding
 from utils.unet import ScoreNet
 from utils.DiT import DiT_S_4
@@ -30,7 +30,7 @@ class PrecondCLD(nn.Module):
         return -vt/(lvv**2+lxv).view(-1,*ones) - self.net(zt,t,cond)/lvv.view(-1,*ones)
 
 class PrecondGeneral(nn.Module):
-    def __init__(self, net, sde : Union[LinearSchrodingerBridge,LinearMomentumSchrodingerBridge]) -> None:
+    def __init__(self, net, sde : Union[VSDM,LinearMomentumSchrodingerBridge]) -> None:
         super().__init__()
         self.net = net
         self.sde = sde

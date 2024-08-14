@@ -3,7 +3,7 @@ import utils.sde_lib as SDEs
 import utils.losses as losses
 
 class VariationalDiffusionTrainingRoutine():
-    def __init__(self,sb : SDEs.LinearSchrodingerBridge, sampling_sb : SDEs.LinearSchrodingerBridge,
+    def __init__(self,sb : SDEs.VSDM, sampling_sb : SDEs.VSDM,
                  num_iters_dsm_warm_up, num_iters_middle, num_iters_dsm_cool_down,
                  num_iters_forward, num_iters_backward, n_time_pts,
                  opt_f=None, sched_f=None, ema_f=None, opt_b=None, sched_b=None, ema_b=None):
@@ -29,7 +29,7 @@ class VariationalDiffusionTrainingRoutine():
         self.num_iters_middle_stage = num_iters_middle 
         self.num_iters_dsm_cool_down = num_iters_dsm_cool_down
         
-        self.adaptive_prior = True
+        self.adaptive_prior = False
         self.num_iters_forward = num_iters_forward
         self.num_iters_backward = num_iters_backward
         self.refresh_rate = self.num_iters_backward + self.num_iters_forward

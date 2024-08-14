@@ -172,8 +172,7 @@ def training(**opts):
             labels = cond
             
             new_data, _ = sde.sample(sampling_shape, device,cond=cond)
-            # new_data_ema, _  = sampling_sde.sample(sampling_shape, device, cond=cond)
-            new_data_ema = new_data
+            new_data_ema, _  = sampling_sde.sample(sampling_shape, device, cond=cond)
             if dataset_type == 'toy':
                 relevant_log_info = toy_data_figs([data, new_data, new_data_ema], ['true','normal', 'ema'])
                 wandb.log(relevant_log_info)

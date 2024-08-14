@@ -40,7 +40,7 @@ class SDE(abc.ABC):
   @torch.no_grad()
   def sample(self, shape, device, backward=True, 
              in_cond=None, prob_flow=True, 
-             cond=None, n_time_pts=25, return_traj=False):
+             cond=None, n_time_pts=100, return_traj=False):
     xt = self.prior_sampling(shape,device) if backward else in_cond
     assert xt is not None
     # step_indices = torch.arange(n_time_pts, device=device)
@@ -186,7 +186,7 @@ class EDM(LinearSDE):
   def prior_sampling(self, shape, device):
     return torch.randn(*shape, dtype=torch.float, device=device) * self.marginal_prob_std(self.T)
 
-class LinearSchrodingerBridge(LinearSDE):
+class VSDM(LinearSDE):
   """ 
     Note that this is not a general SB, it is implemented so that after optimized
     the linear drift transports to a standard normal
@@ -208,12 +208,14 @@ class LinearSchrodingerBridge(LinearSDE):
     return self._T
 
   def beta(self, t):
-    b_min = 0.01
-    return b_min+ t*(self.beta_max-b_min) # self.beta_max
+    b_min = 0.1
+    r = 1.7
+    return b_min+ t**r *(self.beta_max-b_min) # self.beta_max
   
   def beta_int(self, t):
-    b_min = 0.01
-    return  b_min * t +(self.beta_max-b_min) * t**2/2 
+    b_min = 0.1
+    r = 1.7
+    return  b_min * t + t**(r+1)/(r+1) * (self.beta_max-b_min)
   
   @property
   def forward_score(self):
@@ -301,7 +303,8 @@ class LinearSchrodingerBridge(LinearSDE):
 
   def prior_sampling(self, shape, device):
     noise = torch.randn(shape,device=device)
-    t = (torch.ones(noise.shape[0], device=device) * self.T).view(-1,*([1] * (len(noise.shape[1:]))))
+    t = torch.ones(noise.shape[0], device=device) * self.T
+    t = reshape_t(t, noise)
     
     scale, std = self.get_transition_params(noise,t)
     noise = std * noise 
@@ -598,7 +601,7 @@ def get_sde(sde_name):
   elif sde_name == 'edm':
     return EDM()
   elif sde_name == 'vsdm':
-    return LinearSchrodingerBridge()
+    return VSDM()
   elif sde_name == 'cld':
     return CLD()
   elif sde_name == 'linear-momentum-sb':
