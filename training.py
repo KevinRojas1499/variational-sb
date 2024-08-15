@@ -61,7 +61,7 @@ def default_log_rate(ctx, param, value):
 @click.command()
 @click.option('--dataset',type=click.Choice(['mnist','fashion','spiral','checkerboard']))
 @click.option('--model_forward',type=click.Choice(['linear']), default='linear')
-@click.option('--model_backward',type=click.Choice(['mlp','unet', 'linear', 'DiT']), default='mlp')
+@click.option('--model_backward',type=click.Choice(['mlp','unet', 'linear']), default='mlp')
 @click.option('--precondition', is_flag=True, default=True)
 @click.option('--sde',type=click.Choice(['vp','cld','vsdm','linear-momentum-sb']), default='vp')
 @click.option('--dsm_warm_up', type=int, default=0, help='Perform first iterations using just DSM')
