@@ -51,7 +51,7 @@ def default_num_iters(ctx, param, value):
     sde = ctx.params.get('sde')
     if value is not None: 
         return value
-    return 30000 if is_sb_sde(sde) else 30000
+    return 100000 if is_sb_sde(sde) else 100000
 def default_log_rate(ctx, param, value):
     sde = ctx.params.get('sde')
     if value is not None: 

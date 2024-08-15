@@ -200,22 +200,21 @@ class VSDM(LinearSDE):
     LinearSDE.__init__(self,backward_model=backward_model, is_augmented=False)
     self.forward_score = forward_model
     self._T = T
-    self.beta_max = beta_max
     self.delta = delta
+    self.beta_max = beta_max
+    self.beta_min = 0.1
+    self.beta_r = 1.7
+
     
   @property
   def T(self):
     return self._T
 
   def beta(self, t):
-    b_min = 0.1
-    r = 1.7
-    return b_min+ t**r *(self.beta_max-b_min) # self.beta_max
+    return self.beta_min+ t**self.beta_r *(self.beta_max-self.beta_min) # self.beta_max
   
   def beta_int(self, t):
-    b_min = 0.1
-    r = 1.7
-    return  b_min * t + t**(r+1)/(r+1) * (self.beta_max-b_min)
+    return  self.beta_min * t + t**(self.beta_r+1)/(self.beta_r+1) * (self.beta_max-self.beta_min)
   
   @property
   def forward_score(self):
@@ -268,29 +267,13 @@ class VSDM(LinearSDE):
       if forward:
         xt = xt + (-.5 * bt * xt + bt**.5 * policy) * dt + torch.randn_like(xt) * self.diffusion(xt,t) * dt.abs().sqrt()
       else:
-        xt = xt + (-.5 * bt * xt - -.5 * bt * xt + bt * self.forward_score(xt,t_shape,cond) - bt * policy) * dt + torch.randn_like(xt) * self.diffusion(xt,t) * dt.abs().sqrt()
+        xt = xt + (-.5 * bt * xt + bt * self.forward_score(xt,t_shape,cond) - bt**.5 * policy) * dt + torch.randn_like(xt) * self.diffusion(xt,t) * dt.abs().sqrt()
         
     return xt,trajectories,policies
   
-  def integrate_forward_score(self, t):
-    # Curently using Simpsons Method\
-    num_pts = 1000
-    t_shape = t.flatten().view(-1,1,1).expand(-1,num_pts,-1)
-    dt = t/num_pts
-    time_pts = torch.arange(num_pts,device=t.device).unsqueeze(-1) * t_shape/num_pts
-    multipliers = torch.ones(num_pts, device=t.device)
-    multipliers[1:-1:2] = 4
-    multipliers[2:-1:2] = 2
-    At = self.At(time_pts.view(-1,1))
-    Ats = At * self.beta(time_pts.view(-1,1))
-    Ats = Ats.view(-1,num_pts, *Ats.shape[1:])
-    multipliers = multipliers.view(1,-1,*([1] * (len(Ats.shape)-2)))
-    res = torch.sum(Ats * multipliers,dim=1) * dt.view(-1,*([1] * (len(Ats.shape)-2)))/3
-    return res
-
   def get_transition_params(self, x, t):
     A = self.At(t)
-    scale = torch.exp(-.5 * (self.beta_int(t) * (1 - 2 * A)))
+    scale = torch.exp(-.5 * self.beta_int(t) * (1 - 2 * A))
     
     return scale, ((1-scale**2)/(1 - 2 * A)).sqrt()
 

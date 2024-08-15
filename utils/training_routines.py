@@ -29,7 +29,7 @@ class VariationalDiffusionTrainingRoutine():
         self.num_iters_middle_stage = num_iters_middle 
         self.num_iters_dsm_cool_down = num_iters_dsm_cool_down
         
-        self.adaptive_prior = True
+        self.adaptive_prior = False
         self.num_iters_forward = num_iters_forward
         self.num_iters_backward = num_iters_backward
         self.refresh_rate = self.num_iters_backward + self.num_iters_forward
@@ -97,7 +97,8 @@ class VariationalDiffusionTrainingRoutine():
         elif stage == 'forward':
             if prev_stage != stage:
                 self.refresh_forward(data,cond)
-            rand_idx = torch.randint(0,data.shape[0],(100,), device=data.device)
+            rand_idx = torch.randint(0,data.shape[0],(1000,), device=data.device)
+            rand_idx = torch.arange(0,data.shape[0], device=data.device)
             
             return losses.alternate_sb_loss(self.sb,self.trajectories[rand_idx],self.frozen_policy[rand_idx],self.time_pts,optimize_forward=True)
 
