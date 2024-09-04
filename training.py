@@ -47,17 +47,6 @@ def get_dataset_type(name):
 def is_sb_sde(name):
     return (name in ['vsdm','linear-momentum-sb'])
 
-def default_num_iters(ctx, param, value):
-    sde = ctx.params.get('sde')
-    if value is not None: 
-        return value
-    return 100000 if is_sb_sde(sde) else 100000
-def default_log_rate(ctx, param, value):
-    sde = ctx.params.get('sde')
-    if value is not None: 
-        return value
-    return 5000 if is_sb_sde(sde) else 5000
-
 @click.command()
 @click.option('--dataset',type=click.Choice(['mnist','fashion','spiral','checkerboard']))
 @click.option('--model_forward',type=click.Choice(['linear']), default='linear')
@@ -74,8 +63,8 @@ def default_log_rate(ctx, param, value):
 @click.option('--ema_beta', type=float, default=.99)
 @click.option('--clip_grads', is_flag=True, default=True)
 @click.option('--batch_size', type=int, default=128)
-@click.option('--log_rate',type=int,callback=default_log_rate)
-@click.option('--num_iters',type=int,callback=default_num_iters)
+@click.option('--log_rate',type=int,default=5000)
+@click.option('--num_iters',type=int,default=100000)
 @click.option('--dir',type=str)
 @click.option('--load_from_ckpt', type=str)
 @click.option('--disable_wandb',is_flag=True,default=False)
@@ -92,8 +81,8 @@ def training(**opts):
     sampling_sde = get_sde(opts.sde)
     # Set up backwards model
     network_opts = dotdict({
-        'out_shape' : dataset.out_shape
-        # 'out_shape' : [2,28,28]
+        # 'out_shape' : dataset.out_shape
+        'out_shape' : [1,28,28]
         
     })
     model_backward = get_model(opts.model_backward,sde, device,network_opts=network_opts)
@@ -166,7 +155,7 @@ def training(**opts):
                 torch.save(model_forward.state_dict(),os.path.join(path, 'forward.pt'))
                 torch.save(ema_forward.state_dict(),os.path.join(path, 'forward_ema.pt'))
                 
-            n_samples = 1000 if dataset_type == 'toy' else opts.batch_size
+            n_samples = 2000 if dataset_type == 'toy' else opts.batch_size
             sampling_shape = (n_samples, 4 if sde.is_augmented else 2)
             # labels = torch.randint(0,10,(n_samples,),device=device) if cond is not None else None
             labels = cond

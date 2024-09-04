@@ -57,14 +57,14 @@ class SDE(abc.ABC):
         trajectories[:,i] = xt
       if i == 0 or i == n_time_pts-1:
         global k
-        plt.clf()
-        plt.xlim(-20,40)
-        plt.ylim(-20,40)
-        noise = torch.randn_like(xt)
-        plt.scatter(xt[:,0].cpu().numpy(), xt[:,1].cpu().numpy(),s=3,label='xt')
-        plt.scatter(noise[:,0].cpu().numpy(), noise[:,1].cpu().numpy(),s=3,alpha=.3, label='noise')
-        plt.legend()
-        plt.savefig(f'./trajectory/{i}_{k}.png')
+        # plt.clf()
+        # plt.xlim(-20,40)
+        # plt.ylim(-20,40)
+        # noise = torch.randn_like(xt)
+        # plt.scatter(xt[:,0].cpu().numpy(), xt[:,1].cpu().numpy(),s=3,label='xt')
+        # plt.scatter(noise[:,0].cpu().numpy(), noise[:,1].cpu().numpy(),s=3,alpha=.3, label='noise')
+        # plt.legend()
+        # plt.savefig(f'./trajectory/{i}_{k}.png')
       if i == n_time_pts - 1:
         break
       dt = time_pts[i+1] - t 
@@ -100,7 +100,7 @@ class LinearSDE(SDE):
     pass  
 class VP(LinearSDE):
 
-  def __init__(self,T=1.,delta=1e-3, beta_max=10, backward_model=None):
+  def __init__(self,T=1.,delta=1e-3, beta_max=5, backward_model=None):
     LinearSDE.__init__(self,backward_model=backward_model,is_augmented=False)
     self._T = T
     self.delta = delta
@@ -111,10 +111,12 @@ class VP(LinearSDE):
     return self._T
   
   def beta(self, t):
+    return self.beta_max
     b_min = 0.01
     return b_min+ t*(self.beta_max-b_min) # self.beta_max
   
   def beta_int(self, t):
+    return self.beta_max * t
     b_min = 0.01
     return  b_min * t +(self.beta_max-b_min) * t**2/2
   
@@ -211,9 +213,11 @@ class VSDM(LinearSDE):
     return self._T
 
   def beta(self, t):
+    return self.beta_max
     return self.beta_min+ t**self.beta_r *(self.beta_max-self.beta_min) # self.beta_max
   
   def beta_int(self, t):
+    return self.beta_max * t
     return  self.beta_min * t + t**(self.beta_r+1)/(self.beta_r+1) * (self.beta_max-self.beta_min)
   
   @property
@@ -318,10 +322,12 @@ class LinearMomentumSchrodingerBridge(LinearSDE):
     return self._T
 
   def beta(self, t):
+    return self.beta_max
     b_min = 0.01
     return b_min+ t*(self.beta_max-b_min) # self.beta_max
   
   def beta_int(self, t):
+    return self.beta_max * t
     b_min = 0.01
     return  b_min * t +(self.beta_max-b_min) * t**2/2
   
@@ -477,7 +483,8 @@ class LinearMomentumSchrodingerBridge(LinearSDE):
 class CLD(SDE):
   # We assume that images have shape [B, C, H, W] 
   # Additionally there has been added channels as momentum
-  def __init__(self,T=1.,delta=1e-3, gamma=2,beta_max=10., backward_model=None):
+  def __init__(self,T=1.,delta=1e-3, gamma=2,beta_max=5., backward_model=None):
+    # Beta max = 5 here to  match that we didn't divide by 2 as in other set ups
     super().__init__(is_augmented=True)
     self._T = T
     self.delta = delta
@@ -490,10 +497,12 @@ class CLD(SDE):
     return self._T
   
   def beta(self, t):
+    return self.beta_max
     b_min = 0.01
     return (b_min+ t*(self.beta_max-b_min))/2 # self.beta_max
   
   def beta_int(self, t):
+    return self.beta_max * t
     b_min = 0.01
     return  (b_min * t +(self.beta_max-b_min) * t**2/2)/2
   
@@ -553,7 +562,7 @@ class CLD(SDE):
   
   def drift(self, z,t, forward=True,cond=None):
     x,v = torch.chunk(z,2,dim=1)
-    beta = self.beta(t)
+    beta = self.beta(reshape_t(t,z))
     d_x = beta * v
     d_v = beta * (-x - self.gamma * v)
     if forward:
