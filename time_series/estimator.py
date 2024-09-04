@@ -147,6 +147,7 @@ class DiffusionEstimator(PyTorchLightningEstimator):
         batch_size: int = 32,
         num_batches_per_epoch: int = 50,
         sde : str = None,
+        beta_max: float = None,
         dsm_warm_up : int = None,
         dsm_cool_down : int = None,
         forward_opt_steps: int = None,
@@ -172,6 +173,7 @@ class DiffusionEstimator(PyTorchLightningEstimator):
         )
 
         self.sde = sde 
+        self.beta_max = beta_max
         self.dsm_warm_up = dsm_warm_up 
         self.dsm_cool_down = dsm_cool_down 
         self.forward_opt_steps = forward_opt_steps
@@ -354,6 +356,7 @@ class DiffusionEstimator(PyTorchLightningEstimator):
     def create_lightning_module(self) -> DiffusionLightningModule:
         return DiffusionLightningModule(
             sde=self.sde,
+            beta_max=self.beta_max,
             dsm_warm_up=self.dsm_warm_up,
             dsm_cool_down=self.dsm_cool_down,
             forward_opt_steps=self.forward_opt_steps,

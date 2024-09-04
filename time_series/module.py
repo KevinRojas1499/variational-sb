@@ -81,6 +81,7 @@ class DiffusionModel(nn.Module):
     def __init__(
         self,
         sde : str,
+        beta_max : float,
         dsm_warm_up : int,
         dsm_cool_down : int,
         forward_opt_steps: int,
@@ -156,7 +157,7 @@ class DiffusionModel(nn.Module):
             batch_first=True,
         )
         
-        self.sde = SDEs.get_sde(sde)
+        self.sde = SDEs.get_sde(sde, beta_max=beta_max)
         
         self.backward_net = EpsilonTheta(
             in_channels=2 if self.sde.is_augmented else 1,

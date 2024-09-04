@@ -295,8 +295,8 @@ class VSDM(LinearSDE):
     
     scale, std = self.get_transition_params(noise,t)
     noise = std * noise 
-    print("COVARIANCE")
-    print(noise.var(dim=0))
+    # print("COVARIANCE")
+    # print(noise.var(dim=0))
     return  noise
 
 class LinearMomentumSchrodingerBridge(LinearSDE):
@@ -476,8 +476,8 @@ class LinearMomentumSchrodingerBridge(LinearSDE):
     n_noise_x = L[...,0,0] * noise_x
     n_noise_v = L[...,0,1] * noise_x + L[...,1,1] * noise_v
     noise = torch.cat((n_noise_x,n_noise_v),dim=1) 
-    print("COVARIANCE")
-    print(noise.var(dim=0))
+    # print("COVARIANCE")
+    # print(noise.var(dim=0))
     return noise
 
 class CLD(SDE):
@@ -587,14 +587,14 @@ class CLD(SDE):
   def prior_sampling(self, shape, device):
     return torch.randn(*shape, dtype=torch.float, device=device)
   
-def get_sde(sde_name):
+def get_sde(sde_name, **kwargs):
   if sde_name == 'vp':
-    return VP()
+    return VP(**kwargs)
   elif sde_name == 'edm':
-    return EDM()
+    return EDM(**kwargs)
   elif sde_name == 'vsdm':
-    return VSDM()
+    return VSDM(**kwargs)
   elif sde_name == 'cld':
-    return CLD()
+    return CLD(**kwargs)
   elif sde_name == 'linear-momentum-sb':
-    return LinearMomentumSchrodingerBridge()
+    return LinearMomentumSchrodingerBridge(**kwargs)

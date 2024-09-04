@@ -13,6 +13,7 @@ class DiffusionLightningModule(pl.LightningModule):
     def __init__(
         self,
         sde : str,
+        beta_max : float,
         dsm_warm_up : int,
         dsm_cool_down : int,
         forward_opt_steps: Union[int, float],
@@ -25,11 +26,12 @@ class DiffusionLightningModule(pl.LightningModule):
         super().__init__()
         self.automatic_optimization = False
         self.save_hyperparameters()
-        self.model = DiffusionModel(sde=sde,dsm_warm_up=dsm_warm_up,
+        self.model = DiffusionModel(sde=sde, beta_max=beta_max, dsm_warm_up=dsm_warm_up,
                                     dsm_cool_down=dsm_cool_down,forward_opt_steps=forward_opt_steps,
                                     backward_opt_steps=backward_opt_steps,**model_kwargs)
 
         self.sde = sde  
+        self.beta_max = beta_max
         self.dsm_warm_up = dsm_warm_up  
         self.dsm_cool_down = dsm_cool_down  
         self.forward_opt_steps = forward_opt_steps
