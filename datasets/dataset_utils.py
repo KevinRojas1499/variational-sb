@@ -1,7 +1,5 @@
-from itertools import cycle 
 import torchvision.transforms as transforms
-from torchvision.datasets import MNIST, FashionMNIST
-from torch.utils.data import DataLoader
+from torchvision.datasets import MNIST, FashionMNIST, CIFAR10
 
 from datasets.toy_datasets import MyDataset, Spiral, CheckerBoard
 
@@ -14,11 +12,12 @@ def get_dataset(opts) -> MyDataset:
         return CheckerBoard(batch_size,x_scalar=1.,y_scalar=7.)
     elif ds_name == 'mnist':
         dataset = MNIST('.', train=True, transform=transforms.Compose([transforms.ToTensor(),transforms.Resize((28,28))]), download=True)
-        data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=4)
-        return cycle(data_loader)
+        return dataset, [1,28,28]
     elif ds_name == 'fashion':
         dataset = FashionMNIST('.', train=True, transform=transforms.Compose([transforms.ToTensor(),transforms.Resize((28,28))]), download=True)
-        data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=4)
-        return cycle(data_loader)
+        return dataset, [1,28,28]
+    elif ds_name == 'cifar':
+        dataset= CIFAR10('', train=True,transform=transforms.Compose([transforms.ToTensor()]))
+        return dataset, [3,32,32]
     else:
         print('Dataset is not implemented')

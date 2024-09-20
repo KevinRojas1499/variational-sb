@@ -138,7 +138,7 @@ class EvalLossRoutine():
         self.sched.step()
         return loss
 
-def get_routine(opts, sde,sampling_sde,
+def get_routine(opts, num_iters, sde,sampling_sde,
                 opt_b=None, sched_b=None, ema_backward=None, 
                 opt_f=None, sched_f=None, ema_forward=None):
     if isinstance(sde,(SDEs.VP, SDEs.CLD)):
@@ -146,6 +146,6 @@ def get_routine(opts, sde,sampling_sde,
                                opt=opt_b, sched=sched_b)
     else:
         return VariationalDiffusionTrainingRoutine(sde,sampling_sde,\
-            opts.dsm_warm_up,opts.num_iters-opts.dsm_warm_up - opts.dsm_cool_down, opts.dsm_cool_down,
+            opts.dsm_warm_up,num_iters-opts.dsm_warm_up - opts.dsm_cool_down, opts.dsm_cool_down,
             opts.forward_opt_steps, opts.backward_opt_steps,100,
             opt_f, sched_f, ema_forward, opt_b, sched_b, ema_backward)
