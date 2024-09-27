@@ -41,7 +41,7 @@ class SDE(abc.ABC):
   @torch.no_grad()
   def sample(self, shape, device, backward=True, 
              in_cond=None, prob_flow=True, 
-             cond=None, n_time_pts=100, return_traj=False):
+             cond=None, n_time_pts=50, return_traj=False):
     xt = self.prior_sampling(shape,device) if backward else in_cond
     assert xt is not None
     # step_indices = torch.arange(n_time_pts, device=device)

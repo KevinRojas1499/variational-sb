@@ -5,6 +5,7 @@ from typing import Union
 from utils.sde_lib import SDE, VP, CLD, LinearMomentumSchrodingerBridge, VSDM
 from utils.models import MLP, MatrixTimeEmbedding
 from utils.unet import ScoreNet
+from utils.networks import DhariwalUNet
 from utils.DiT import DiT_S_2
 
 class PrecondVP(nn.Module):
@@ -62,7 +63,8 @@ def get_model(name, sde : SDE, device, network_opts=None):
     elif name == 'unet':
         in_channels = network_opts.out_shape[0] 
         out_channels = in_channels//(2 if augmented else 1)
-        model = ScoreNet(in_channels=in_channels, out_channels=out_channels)
+        # model = ScoreNet(in_channels=in_channels, out_channels=out_channels)
+        model = DhariwalUNet(img_resolution=network_opts.out_shape[-1], in_channels=in_channels, out_channels=out_channels)
         return model.requires_grad_(True).to(device=device)
     elif name == 'DiT':
         in_channels = network_opts.out_shape[0] 
