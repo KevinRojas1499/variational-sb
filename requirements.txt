@@ -1,11 +1,14 @@
 click
 ema_pytorch
-gluonts==0.15.1
-lightning==2.4.0
+# gluonts==0.15.1
+# lightning==2.4.0
 matplotlib
 numpy
 POT
-pts==1.4.8
-torch==2.4.0
-torchvision==0.19.0
-tqdm==4.66.5
+# pts==1.4.8
+torch
+torchvision
+tqdm
+wandb
+plotly
+timm

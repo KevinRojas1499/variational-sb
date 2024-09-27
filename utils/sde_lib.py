@@ -3,6 +3,7 @@ import abc
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
+from tqdm import tqdm
 
 def reshape_t(t, xt):
   ones = [1] * len(xt.shape[1:])
@@ -52,7 +53,7 @@ class SDE(abc.ABC):
     time_pts = torch.linspace(0. if backward else self.delta, self.T, n_time_pts, device=device)
     if return_traj:
       trajectories = torch.empty((xt.shape[0], n_time_pts, *xt.shape[1:]),device=xt.device) 
-    for i, t in enumerate(time_pts):
+    for i, t in tqdm(enumerate(time_pts), total=n_time_pts, leave=False):
       if return_traj:
         trajectories[:,i] = xt
       if i == 0 or i == n_time_pts-1:

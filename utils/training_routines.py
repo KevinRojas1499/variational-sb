@@ -71,7 +71,7 @@ class VariationalDiffusionTrainingRoutine():
     
     @torch.no_grad()
     def refresh_backward(self, data):
-        self.loss_times = torch.linspace(self.sb.delta, self.sb.T, 500, device=data.device)
+        self.loss_times = torch.linspace(self.sb.delta, self.sb.T, 100, device=data.device)
         ones = [1] * len(data.shape[1:])
         shaped_t = self.loss_times.reshape(-1,*ones)
         self.scales, self.stds = self.sampling_sb.get_transition_params(torch.empty((self.loss_times.shape[0], *data.shape[1:]),device=data.device), shaped_t)

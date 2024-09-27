@@ -35,7 +35,7 @@ def plot_32_mnist(x_t,file_name='mnist_samples.jpeg'):
         for j in range(n_cols):
             im = x_t[idx].permute(1,2,0)
             axs[i][j].axis('off')
-            axs[i][j].imshow(im.cpu().numpy(),vmin=0,vmax=1,cmap='gray')
+            axs[i][j].imshow(im.clamp(0,1).cpu().numpy())
             idx+=1
     plt.tight_layout()
     fig.savefig(file_name,bbox_inches='tight')
@@ -44,18 +44,18 @@ def plot_32_mnist(x_t,file_name='mnist_samples.jpeg'):
 def get_dataset_type(name):
     if name in ['spiral','checkerboard']:
         return 'toy'
-    elif name in ['mnist','fashion']:
+    elif name in ['mnist','fashion', 'cifar']:
         return 'image'
 
 def is_sb_sde(name):
     return (name in ['vsdm','linear-momentum-sb'])
 
 @click.command()
-@click.option('--dataset',type=click.Choice(['mnist','fashion','spiral','checkerboard']))
+@click.option('--dataset',type=click.Choice(['mnist','cifar','fashion','spiral','checkerboard']), default='cifar')
 @click.option('--model_forward',type=click.Choice(['linear']), default='linear')
-@click.option('--model_backward',type=click.Choice(['mlp','unet', 'linear']), default='mlp')
+@click.option('--model_backward',type=click.Choice(['mlp','unet','DiT', 'linear']), default='DiT')
 @click.option('--precondition', is_flag=True, default=True)
-@click.option('--sde',type=click.Choice(['vp','cld','vsdm','linear-momentum-sb']), default='vp')
+@click.option('--sde',type=click.Choice(['vp','cld','vsdm','linear-momentum-sb']), default='linear-momentum-sb')
 @click.option('--dsm_warm_up', type=int, default=0, help='Perform first iterations using just DSM')
 @click.option('--dsm_cool_down', type=int, default=0, help='Stop optimizing the forward model for these last iterations')
 @click.option('--forward_opt_steps', type=int, default=100, help='Number of forward opt steps in alternate training scheme')
@@ -68,7 +68,7 @@ def is_sb_sde(name):
 @click.option('--clip_grads', is_flag=True, default=True)
 @click.option('--batch_size', type=int, default=128)
 @click.option('--log_rate',type=int,default=5000)
-@click.option('--num_epochs',type=int,default=50)
+@click.option('--num_epochs',type=int,default=400)
 @click.option('--dir',type=str)
 @click.option('--load_from_ckpt', type=str)
 @click.option('--disable_wandb',is_flag=True,default=False)
@@ -95,7 +95,7 @@ def training(**opts):
     data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=4, 
                              sampler= sampler, drop_last=True, pin_memory=True)
     epochs = opts.num_epochs
-    num_iters = epochs * len(dataset)//(world_size * batch_size) 
+    num_iters = epochs * (len(dataset)//(world_size * batch_size) )
     
     dataset_type = get_dataset_type(opts.dataset)
     is_sb = is_sb_sde(opts.sde)
@@ -103,7 +103,7 @@ def training(**opts):
     sampling_sde = get_sde(opts.sde)
     # Set up backwards model
     if sde.is_augmented:
-        out_shape[0] *= 1
+        out_shape[0] *= 2 
     network_opts = dotdict({'out_shape' : out_shape})
     model_backward = DDP(get_model(opts.model_backward,sde, device,network_opts=network_opts))
     opt_b, ema_backward, sched_b = build_optimizer_ema_sched(model_backward,opts.optimizer,opts.lr)
@@ -115,18 +115,17 @@ def training(**opts):
         model_forward  = DDP(get_model(opts.model_forward,sde,device,network_opts=network_opts))
         opt_f, ema_forward, sched_f = build_optimizer_ema_sched(model_forward,opts.optimizer,opts.lr)
         sde.forward_score, sampling_sde.forward_score = model_forward, ema_forward
-        print(f"Forward Model parameters: {sum(p.numel() for p in model_backward.parameters() if p.requires_grad)//1e6} M")
+        print(f"Forward Model parameters: {sum(p.numel() for p in model_forward.parameters() if p.requires_grad)//1e6} M")
     
     start_iter = 0
     if opts.load_from_ckpt is not None:
         start_iter = int(opts.load_from_ckpt.split('_')[-1])
         print(f'Loading checkpoint at {opts.load_from_ckpt}, now starting at {start_iter}')
-        model_backward.module.load_state_dict(torch.load(os.path.join(opts.load_from_ckpt,'backward.pt')))
-        ema_backward.load_state_dict(torch.load(os.path.join(opts.load_from_ckpt,'backward_ema.pt')))
+        model_backward.module.load_state_dict(torch.load(os.path.join(opts.load_from_ckpt,'backward.pt'), weights_only=True))
+        ema_backward.load_state_dict(torch.load(os.path.join(opts.load_from_ckpt,'backward_ema.pt'), weights_only=True))
         if is_sb:
-            model_forward.module.load_state_dict(torch.load(os.path.join(opts.load_from_ckpt,'forward.pt')))
-            ema_forward.load_state_dict(torch.load(os.path.join(opts.load_from_ckpt,'forward_ema.pt')))
-            
+            model_forward.module.load_state_dict(torch.load(os.path.join(opts.load_from_ckpt,'forward.pt'), weights_only=True))
+            ema_forward.load_state_dict(torch.load(os.path.join(opts.load_from_ckpt,'forward_ema.pt'), weights_only=True))
     if opts.precondition:
         sde.backward_score = get_preconditioned_model(model_backward, sde)
         sampling_sde.backward_score = get_preconditioned_model(model_backward, sde)
@@ -137,10 +136,10 @@ def training(**opts):
     if enable_wandb:
         init_wandb(opts)
 
-    cur_itr = 0
+    print(f'Running for {num_iters} iterations')
+    cur_itr = start_iter
     for epoch in range(epochs):
-        if rank == 0:
-            pbar = tqdm(data_loader)
+        pbar = tqdm(data_loader) if rank == 0 else data_loader
         for _data in pbar:
             if dataset_type == 'toy':
                 data, cond = _data, None
@@ -171,16 +170,16 @@ def training(**opts):
                 # Save Checkpoints
                 path = os.path.join(opts.dir, f'itr_{cur_itr+1}/')
                 os.makedirs(path,exist_ok=True) # Still wondering it this is the best idea
-                torch.save(model_backward.state_dict(),os.path.join(path, 'backward.pt'))
-                torch.save(ema_backward.state_dict(),os.path.join(path, 'backward_ema.pt'))
-                
-                if is_sb:
-                    torch.save(model_forward.state_dict(),os.path.join(path, 'forward.pt'))
-                    torch.save(ema_forward.state_dict(),os.path.join(path, 'forward_ema.pt'))
+                if rank == 0:
+                    torch.save(model_backward.module.state_dict(),os.path.join(path, 'backward.pt'))
+                    torch.save(ema_backward.state_dict(),os.path.join(path, 'backward_ema.pt'))
+                    
+                    if is_sb:
+                        torch.save(model_forward.module.state_dict(),os.path.join(path, 'forward.pt'))
+                        torch.save(ema_forward.state_dict(),os.path.join(path, 'forward_ema.pt'))
                     
                 n_samples = 2000 if dataset_type == 'toy' else opts.batch_size
                 sampling_shape = (n_samples, *out_shape)
-                # labels = torch.randint(0,10,(n_samples,),device=device) if cond is not None else None
                 labels = cond
                 
                 new_data, _ = sde.sample(sampling_shape, device,cond=labels)
@@ -190,7 +189,7 @@ def training(**opts):
                     wandb.log(relevant_log_info)
                 elif dataset_type == 'image':
                     plot_32_mnist(new_data,os.path.join(opts.dir,f'itr_{rank}_{cur_itr+1}.png'))
-                    plot_32_mnist(new_data,os.path.join(opts.dir,f'itr_ema_{rank}_{cur_itr+1}.png'))
+                    plot_32_mnist(new_data_ema,os.path.join(opts.dir,f'itr_ema_{rank}_{cur_itr+1}.png'))
                 
                 dist.barrier() 
             cur_itr += 1
