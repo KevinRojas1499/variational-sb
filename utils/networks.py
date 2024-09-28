@@ -281,7 +281,7 @@ class DhariwalUNet(torch.nn.Module):
         self.out_norm = GroupNorm(num_channels=cout)
         self.out_conv = Conv2d(in_channels=cout, out_channels=out_channels, kernel=3, **init_zero)
 
-    def forward(self, x, noise_labels, class_labels, augment_labels=None):
+    def forward(self, x, noise_labels, cond, augment_labels=None):
         # Mapping.
         emb = self.map_noise(noise_labels)
         if self.map_augment is not None and augment_labels is not None:
@@ -289,7 +289,7 @@ class DhariwalUNet(torch.nn.Module):
         emb = silu(self.map_layer0(emb))
         emb = self.map_layer1(emb)
         if self.map_label is not None:
-            tmp = class_labels
+            tmp = cond
             if self.training and self.label_dropout:
                 tmp = tmp * (torch.rand([x.shape[0], 1], device=x.device) >= self.label_dropout).to(tmp.dtype)
             emb = emb + self.map_label(tmp)

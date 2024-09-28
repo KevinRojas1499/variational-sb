@@ -53,7 +53,7 @@ def is_sb_sde(name):
 @click.command()
 @click.option('--dataset',type=click.Choice(['mnist','cifar','fashion','spiral','checkerboard']), default='cifar')
 @click.option('--model_forward',type=click.Choice(['linear']), default='linear')
-@click.option('--model_backward',type=click.Choice(['mlp','unet','DiT', 'linear']), default='DiT')
+@click.option('--model_backward',type=click.Choice(['mlp','unet','DiT', 'linear']), default='unet')
 @click.option('--precondition', is_flag=True, default=True)
 @click.option('--sde',type=click.Choice(['vp','cld','vsdm','linear-momentum-sb']), default='linear-momentum-sb')
 @click.option('--dsm_warm_up', type=int, default=0, help='Perform first iterations using just DSM')
@@ -123,9 +123,13 @@ def training(**opts):
         print(f'Loading checkpoint at {opts.load_from_ckpt}, now starting at {start_iter}')
         model_backward.module.load_state_dict(torch.load(os.path.join(opts.load_from_ckpt,'backward.pt'), weights_only=True))
         ema_backward.load_state_dict(torch.load(os.path.join(opts.load_from_ckpt,'backward_ema.pt'), weights_only=True))
+        opt_b.load_state_dict(torch.load(os.path.join(opts.load_from_ckpt,'opt_b.pt'), weights_only=True))
+        sched_b.load_state_dict(torch.load(os.path.join(opts.load_from_ckpt,'sched_b.pt'), weights_only=True))
         if is_sb:
             model_forward.module.load_state_dict(torch.load(os.path.join(opts.load_from_ckpt,'forward.pt'), weights_only=True))
             ema_forward.load_state_dict(torch.load(os.path.join(opts.load_from_ckpt,'forward_ema.pt'), weights_only=True))
+            opt_f.load_state_dict(torch.load(os.path.join(opts.load_from_ckpt,'opt_f.pt'), weights_only=True))
+            sched_f.load_state_dict(torch.load(os.path.join(opts.load_from_ckpt,'sched_f.pt'), weights_only=True))
     if opts.precondition:
         sde.backward_score = get_preconditioned_model(model_backward, sde)
         sampling_sde.backward_score = get_preconditioned_model(model_backward, sde)
@@ -154,7 +158,8 @@ def training(**opts):
             loss = loss/world_size 
             if enable_wandb:
                 wandb.log({
-                    'loss': loss
+                    'loss': loss,
+                    'itr' : cur_itr
                 })
             if (cur_itr+1)%5 == 0 and rank == 0:
                 # lr_b = opt_b.param_groups[0]['lr'] 
@@ -173,10 +178,13 @@ def training(**opts):
                 if rank == 0:
                     torch.save(model_backward.module.state_dict(),os.path.join(path, 'backward.pt'))
                     torch.save(ema_backward.state_dict(),os.path.join(path, 'backward_ema.pt'))
-                    
+                    torch.save(routine.opt_b.state_dict(), os.path.join(path,'opt_b.pt')) 
+                    torch.save(routine.sched_b.state_dict(), os.path.join(path,'sched_b.pt')) 
                     if is_sb:
                         torch.save(model_forward.module.state_dict(),os.path.join(path, 'forward.pt'))
                         torch.save(ema_forward.state_dict(),os.path.join(path, 'forward_ema.pt'))
+                        torch.save(routine.opt_f.state_dict(), os.path.join(path,'opt_f.pt')) 
+                        torch.save(routine.sched_f.state_dict(), os.path.join(path,'sched_f.pt')) 
                     
                 n_samples = 2000 if dataset_type == 'toy' else opts.batch_size
                 sampling_shape = (n_samples, *out_shape)
