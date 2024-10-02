@@ -2,7 +2,7 @@
 from torch.optim import SGD, RMSprop, Adagrad, AdamW, lr_scheduler, Adam
 from ema_pytorch import EMA
 
-def build_optimizer_ema_sched(model, name, lr, weight_decay=0.0):
+def build_optimizer_ema_sched(model, name, lr,  step_size=1000, weight_decay=0.0):
     optim_name = {
         'adam': Adam,
         'adamw': AdamW,
@@ -26,7 +26,7 @@ def build_optimizer_ema_sched(model, name, lr, weight_decay=0.0):
     ema = EMA(model, beta=0.99) 
     cur_lr_gamma = lr
     if cur_lr_gamma < 1.0:
-        sched = lr_scheduler.StepLR(optimizer, step_size=1000, gamma=.99)
+        sched = lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=.99)
     else:
         sched = None
 

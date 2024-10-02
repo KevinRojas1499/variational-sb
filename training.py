@@ -106,14 +106,14 @@ def training(**opts):
         out_shape[0] *= 2 
     network_opts = dotdict({'out_shape' : out_shape})
     model_backward = DDP(get_model(opts.model_backward,sde, device,network_opts=network_opts))
-    opt_b, ema_backward, sched_b = build_optimizer_ema_sched(model_backward,opts.optimizer,opts.lr)
+    opt_b, ema_backward, sched_b = build_optimizer_ema_sched(model_backward,opts.optimizer,opts.lr, step_size=10000)
     sde.backward_score, sampling_sde.backward_score = model_backward, ema_backward
     print(f"Backward Model parameters: {sum(p.numel() for p in model_backward.parameters() if p.requires_grad)//1e6} M")
     opt_f, ema_forward, sched_f = None, None, None
     if is_sb:
         # We need a forward model
         model_forward  = DDP(get_model(opts.model_forward,sde,device,network_opts=network_opts))
-        opt_f, ema_forward, sched_f = build_optimizer_ema_sched(model_forward,opts.optimizer,opts.lr)
+        opt_f, ema_forward, sched_f = build_optimizer_ema_sched(model_forward,opts.optimizer,opts.lr, step_size=1000)
         sde.forward_score, sampling_sde.forward_score = model_forward, ema_forward
         print(f"Forward Model parameters: {sum(p.numel() for p in model_forward.parameters() if p.requires_grad)//1e6} M")
     
