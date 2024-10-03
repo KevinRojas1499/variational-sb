@@ -26,12 +26,13 @@ class MLP(nn.Module):
         return self.out(x)
 
 class MatrixTimeEmbedding(torch.nn.Module):
-    def __init__(self, out_shape, is_augmented=False, gamma=None):
+    def __init__(self, out_shape, is_augmented=False, gamma=None, under_damp_coeff=1.):
         super(MatrixTimeEmbedding,self).__init__()
         self.out_shape = out_shape
         self.real_dim = np.prod(out_shape)
         self.gamma = gamma
         self.is_augmented = is_augmented
+        self.under_damp_coeff = under_damp_coeff
         self.ones = [-1] * len(self.out_shape)
         self._lambda = nn.Parameter(.1 *torch.ones(self.real_dim))
     
@@ -39,8 +40,8 @@ class MatrixTimeEmbedding(torch.nn.Module):
     def Lambda(self):
         if self.is_augmented:
             lamb = self._lambda.reshape(1, *self.out_shape)
-            lamb_v = .5 - 1/self.gamma * (1-2 * self.gamma * lamb).sqrt()
-            lamb_x = (1-(self.gamma - 2 * self.gamma * lamb)**2/4)/(2*self.gamma) 
+            lamb_v = .5 - 1/self.gamma * (self.under_damp_coeff * (1-2 * self.gamma * lamb)).sqrt()
+            lamb_x = (1- 1/self.under_damp_coeff * (self.gamma - 2 * self.gamma * lamb)**2/4)/(2*self.gamma) 
             return torch.cat((lamb_x,lamb),dim=1)
             return torch.cat((lamb,lamb_v),dim=1)
         

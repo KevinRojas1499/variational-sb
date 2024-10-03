@@ -73,6 +73,7 @@ def is_sb_sde(name):
 @click.option('--model_forward',type=click.Choice(['linear']), default='linear')
 @click.option('--model_backward',type=click.Choice(['DiT','mlp', 'linear']), default='DiT')
 @click.option('--sde',type=click.Choice(['vp','cld','sb', 'vsdm','momentum-sb','linear-momentum-sb']), default='linear-momentum-sb')
+@click.option('--damp_coef',type=float, default=1.)
 @click.option('--num_samples', type=int)
 @click.option('--batch_size', type=int, default=100)
 @click.option('--seed', type=int, default=42)

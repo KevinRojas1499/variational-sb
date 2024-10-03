@@ -59,7 +59,7 @@ def get_model(name, sde : SDE, device, network_opts=None):
         out_shape = network_opts.out_shape.copy()
         out_shape[0] = out_shape[0]//(2 if augmented else 1)
         gamma = sde.gamma if augmented else None
-        return MatrixTimeEmbedding(out_shape,augmented,gamma).requires_grad_(True).to(device=device)
+        return MatrixTimeEmbedding(out_shape,augmented,gamma, under_damp_coeff=network_opts.damp_coef).requires_grad_(True).to(device=device)
     elif name == 'unet':
         in_channels = network_opts.out_shape[0] 
         out_channels = in_channels//(2 if augmented else 1)

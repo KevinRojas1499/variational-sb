@@ -32,6 +32,9 @@ class CheckerBoard(MyDataset):
     def out_shape(self):
         return [2]
     
+    def __len__(self):
+        return 10000
+    
     def __iter__(self):
         return self
 
@@ -68,6 +71,9 @@ class Spiral(MyDataset):
     @property
     def out_shape(self):
         return [2]
+    
+    def __len__(self):
+        return 10000
     
     def __iter__(self):
         return self

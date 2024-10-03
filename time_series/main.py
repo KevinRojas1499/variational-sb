@@ -43,6 +43,7 @@ def set_seed(seed):
 @click.option('--hidden_dim', type=int, default=64)
 @click.option('--epochs', type=int, default=50)
 @click.option('--sde',type=click.Choice(['vp','cld', 'vsdm','linear-momentum-sb']), default='vp')
+@click.option('--damp_coef',type=float, default=1.)
 @click.option('--beta_max', type=float, default=10)
 @click.option('--dsm_warm_up', type=int, default=500, help='Perform first iterations using just DSM')
 @click.option('--dsm_cool_down', type=int, default=1000, help='Stop optimizing the forward model for these last iterations')
@@ -76,6 +77,7 @@ def main(**opts):
         context_length=dataset.metadata.prediction_length * 3,
         batch_size=opts.batch_size,
         sde=opts.sde,
+        damp_coef=opts.damp_coef,
         beta_max=opts.beta_max,
         dsm_warm_up=opts.dsm_warm_up,
         dsm_cool_down=opts.dsm_cool_down,

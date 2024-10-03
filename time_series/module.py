@@ -81,6 +81,7 @@ class DiffusionModel(nn.Module):
     def __init__(
         self,
         sde : str,
+        damp_coef : float,
         beta_max : float,
         dsm_warm_up : int,
         dsm_cool_down : int,
@@ -158,15 +159,15 @@ class DiffusionModel(nn.Module):
         )
         
         self.sde = SDEs.get_sde(sde, beta_max=beta_max)
-        
+        augmented = self.sde.is_augmented 
         self.backward_net = EpsilonTheta(
-            in_channels=2 if self.sde.is_augmented else 1,
+            in_channels=2 if augmented else 1,
             target_dim=input_size,
             cond_dim=hidden_size,
             interval=self.n_timestep,
         )
         self.backward_net = get_preconditioned_model(self.backward_net,self.sde)
-        self.forward_net = MatrixTimeEmbedding([2 if self.sde.is_augmented else 1,input_size]) # TODO: Verify that this is correct
+        self.forward_net = MatrixTimeEmbedding([1,input_size], gamma=self.sde.gamma if augmented else None, is_augmented=augmented, under_damp_coeff=damp_coef) 
 
         self.sde.backward_score = self.backward_net
         if hasattr(self.sde,'forward_score'):
@@ -178,7 +179,7 @@ class DiffusionModel(nn.Module):
             'dsm_cool_down': dsm_cool_down,
             'backward_opt_steps': backward_opt_steps,
             'forward_opt_steps': forward_opt_steps
-        }), self.sde,self.sde)
+        }), 2500, self.sde,self.sde)
 
     def describe_inputs(self, batch_size=1) -> InputSpec:
         return InputSpec(

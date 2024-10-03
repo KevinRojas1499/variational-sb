@@ -56,6 +56,7 @@ def is_sb_sde(name):
 @click.option('--model_backward',type=click.Choice(['mlp','unet','DiT', 'linear']), default='unet')
 @click.option('--precondition', is_flag=True, default=True)
 @click.option('--sde',type=click.Choice(['vp','cld','vsdm','linear-momentum-sb']), default='linear-momentum-sb')
+@click.option('--damp_coef',type=float, default=1.)
 @click.option('--dsm_warm_up', type=int, default=0, help='Perform first iterations using just DSM')
 @click.option('--dsm_cool_down', type=int, default=0, help='Stop optimizing the forward model for these last iterations')
 @click.option('--forward_opt_steps', type=int, default=100, help='Number of forward opt steps in alternate training scheme')
@@ -91,20 +92,23 @@ def training(**opts):
     enable_wandb = not opts.disable_wandb and rank == 0
     
     dataset, out_shape= get_dataset(opts)
-    sampler = DistributedSampler(dataset, num_replicas=world_size, rank=rank, shuffle=True, seed=opts.seed)
-    data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=4, 
-                             sampler= sampler, drop_last=True, pin_memory=True)
+    dataset_type = get_dataset_type(opts.dataset)
+    if dataset_type == 'toy':
+        data_loader = dataset
+    else:
+        sampler = DistributedSampler(dataset, num_replicas=world_size, rank=rank, shuffle=True, seed=opts.seed)
+        data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=4, 
+                                sampler= sampler, drop_last=True, pin_memory=True)
     epochs = opts.num_epochs
     num_iters = epochs * (len(dataset)//(world_size * batch_size) )
     
-    dataset_type = get_dataset_type(opts.dataset)
     is_sb = is_sb_sde(opts.sde)
     sde = get_sde(opts.sde)
     sampling_sde = get_sde(opts.sde)
     # Set up backwards model
     if sde.is_augmented:
         out_shape[0] *= 2 
-    network_opts = dotdict({'out_shape' : out_shape})
+    network_opts = dotdict({'out_shape' : out_shape, 'damp_coef' : opts.damp_coef})
     model_backward = DDP(get_model(opts.model_backward,sde, device,network_opts=network_opts))
     opt_b, ema_backward, sched_b = build_optimizer_ema_sched(model_backward,opts.optimizer,opts.lr, step_size=10000)
     sde.backward_score, sampling_sde.backward_score = model_backward, ema_backward
