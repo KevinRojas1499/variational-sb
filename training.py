@@ -28,7 +28,7 @@ def init_wandb(opts):
     )
 
 def plot_32_mnist(x_t,file_name='mnist_samples.jpeg'):
-    n_rows, n_cols = 4,8
+    n_rows, n_cols = 4,4
     fig, axs = plt.subplots(n_rows,n_cols)
     idx = 0
     for i in range(n_rows):
@@ -190,9 +190,9 @@ def training(**opts):
                         torch.save(routine.opt_f.state_dict(), os.path.join(path,'opt_f.pt')) 
                         torch.save(routine.sched_f.state_dict(), os.path.join(path,'sched_f.pt')) 
                     
-                n_samples = 2000 if dataset_type == 'toy' else opts.batch_size
+                n_samples = 2000 if dataset_type == 'toy' else opts.batch_size//2
                 sampling_shape = (n_samples, *out_shape)
-                labels = cond
+                labels = cond[:n_samples]
                 
                 new_data, _ = sde.sample(sampling_shape, device,cond=labels)
                 new_data_ema, _  = sampling_sde.sample(sampling_shape, device, cond=labels)
