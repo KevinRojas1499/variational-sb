@@ -16,6 +16,7 @@ from datasets.dataset_utils import get_dataset
 from utils.metrics import get_w2
 from utils.misc import dotdict
 from utils.optim_utils import build_optimizer_ema_sched
+from utils.autoencoder import Autoencoder
 
 def init_wandb(opts):
     wandb.init(
@@ -54,6 +55,7 @@ def is_sb_sde(name):
 @click.option('--dataset',type=click.Choice(['mnist','cifar','fashion','spiral','checkerboard']), default='cifar')
 @click.option('--model_forward',type=click.Choice(['linear']), default='linear')
 @click.option('--model_backward',type=click.Choice(['mlp','unet','DiT', 'linear']), default='unet')
+@click.option('--encoder',type=str, default=None)
 @click.option('--precondition', is_flag=True, default=True)
 @click.option('--sde',type=click.Choice(['vp','cld','vsdm','linear-momentum-sb']), default='linear-momentum-sb')
 @click.option('--damp_coef',type=float, default=1.)
@@ -91,7 +93,7 @@ def training(**opts):
     print(device)
     enable_wandb = not opts.disable_wandb and rank == 0
     
-    dataset, out_shape= get_dataset(opts)
+    dataset, out_shape = get_dataset(opts)
     dataset_type = get_dataset_type(opts.dataset)
     if dataset_type == 'toy':
         data_loader = dataset
@@ -102,6 +104,12 @@ def training(**opts):
     epochs = opts.num_epochs
     num_iters = epochs * (len(dataset)//(world_size * batch_size) )
     
+    encode = False
+    if opts.encoder is not None:
+        encode = True
+        autoencoder = Autoencoder(opts.encoder).to(device) 
+        out_shape = [4, 16, 16]
+
     is_sb = is_sb_sde(opts.sde)
     sde = get_sde(opts.sde)
     sampling_sde = get_sde(opts.sde)
@@ -156,6 +164,9 @@ def training(**opts):
                 cond = cond.to(device)
                 
             data = data.to(device)
+
+            if encode:
+                data = autoencoder.encode(data)
             
             loss = routine.training_iteration(cur_itr,data, cond)           
             dist.all_reduce(loss)
@@ -190,18 +201,22 @@ def training(**opts):
                         torch.save(routine.opt_f.state_dict(), os.path.join(path,'opt_f.pt')) 
                         torch.save(routine.sched_f.state_dict(), os.path.join(path,'sched_f.pt')) 
                     
-                n_samples = 2000 if dataset_type == 'toy' else opts.batch_size//2
+                n_samples = 2000 if dataset_type == 'toy' else 32 
                 sampling_shape = (n_samples, *out_shape)
                 labels = cond[:n_samples]
                 
                 new_data, _ = sde.sample(sampling_shape, device,cond=labels)
                 new_data_ema, _  = sampling_sde.sample(sampling_shape, device, cond=labels)
+                if encode:
+                    new_data = autoencoder.decode(new_data)
+                    new_data_ema = autoencoder.decode(new_data_ema)
+                dist.barrier()
                 if dataset_type == 'toy':
                     relevant_log_info = toy_data_figs([data, new_data, new_data_ema], ['true','normal', 'ema'])
                     wandb.log(relevant_log_info)
                 elif dataset_type == 'image':
-                    plot_32_mnist(new_data,os.path.join(opts.dir,f'itr_{rank}_{cur_itr+1}.png'))
-                    plot_32_mnist(new_data_ema,os.path.join(opts.dir,f'itr_ema_{rank}_{cur_itr+1}.png'))
+                    plot_32_mnist(new_data,os.path.join(opts.dir,f'itr_{cur_itr+1}_{rank}.png'))
+                    plot_32_mnist(new_data_ema,os.path.join(opts.dir,f'itr_ema_{cur_itr+1}_{rank}.png'))
                 
                 dist.barrier() 
             cur_itr += 1

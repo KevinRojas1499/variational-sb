@@ -14,7 +14,7 @@ from utils.metrics import get_w2
 from utils.misc import dotdict
 from utils.model_utils import get_model, get_preconditioned_model
 from utils.sde_lib import get_sde
-
+from utils.autoencoder import Autoencoder
 
 def init_wandb(opts):
     wandb.init(
@@ -72,6 +72,7 @@ def is_sb_sde(name):
 @click.option('--dataset',type=click.Choice(['mnist','spiral','checkerboard','cifar']), default='cifar')
 @click.option('--model_forward',type=click.Choice(['linear']), default='linear')
 @click.option('--model_backward',type=click.Choice(['DiT','unet','mlp', 'linear']), default='unet')
+@click.option('--encoder',type=str, default='cifar_vae_big_long/')
 @click.option('--sde',type=click.Choice(['vp','cld','sb', 'vsdm','momentum-sb','linear-momentum-sb']), default='linear-momentum-sb')
 @click.option('--damp_coef',type=float, default=1.)
 @click.option('--num_samples', type=int)
@@ -98,10 +99,15 @@ def training(**opts):
     is_sb = is_sb_sde(opts.sde)
     print('Is sb', is_sb)
     sde = get_sde(opts.sde)
+    encode = opts.encoder is not None
+    if encode:
+        out_shape = [4, 16, 16]
+        autoencoder = Autoencoder(opts.encoder).to(device)
+
     # Set up backwards model
     if sde.is_augmented:
         out_shape[0] *= 2 
-    network_opts = dotdict({'out_shape' : out_shape})
+    network_opts = dotdict({'out_shape' : out_shape, 'damp_coef' : opts.damp_coef})
     
     model_backward = get_model(opts.model_backward,sde, device,network_opts=network_opts)
     model_backward.load_state_dict(torch.load(os.path.join(opts.load_from_ckpt,'backward.pt'), weights_only=True))
@@ -122,6 +128,8 @@ def training(**opts):
         sampling_shape = (effective_batch, *network_opts.out_shape)
         cond = torch.randint(0,10,(effective_batch,), device=device)
         new_data, _ = sde.sample(sampling_shape, device, cond=cond)
+        if encode:
+            new_data = autoencoder.decode(new_data)
         folder = os.path.join(opts.dir, f'{batch}/{rank}')
         os.makedirs(folder, exist_ok=True)
         images_np = (new_data * 255 ).clip(0, 255).to(torch.uint8).permute(0, 2, 3, 1).cpu().numpy()
