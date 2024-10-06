@@ -471,8 +471,10 @@ class LinearMomentumSchrodingerBridge(LinearSDE):
 
   def prior_sampling(self, shape, device):
     noise = torch.randn(shape, device=device)
-    t = (torch.ones(noise.shape[0], device=device) * self.T).view(-1,*([1] * len(noise.shape[1:])))
-    H, L = self.get_transition_params(noise,t)
+    ones = [1] * len(noise.shape[1:])
+    t = (torch.ones(1, device=device) * self.T).view(-1,*ones)
+    H, L = self.get_transition_params(noise[:1],t)
+    L = L.expand((noise.shape[0], *([-1] * len(L.shape[1:]))))
     noise_x, noise_v = torch.chunk(noise,2, dim=1)
     n_noise_x = L[...,0,0] * noise_x
     n_noise_v = L[...,0,1] * noise_x + L[...,1,1] * noise_v
