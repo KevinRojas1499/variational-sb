@@ -15,6 +15,7 @@ from utils.misc import dotdict
 from utils.model_utils import get_model, get_preconditioned_model
 from utils.sde_lib import get_sde
 from utils.autoencoder import Autoencoder
+from ema_pytorch import EMA
 
 def init_wandb(opts):
     wandb.init(
@@ -26,22 +27,8 @@ def init_wandb(opts):
         # config=config
     )
 
-def toy_data_figs(data_array, names):
-    # We assume that the ground truth is in the zeroth position
-    fig = go.Figure()
-    stats_and_figs = {}
-    for data, name in zip(data_array,names):
-        if data.shape[-1] == 1:
-            fig.add_trace(go.Histogram(x=data[:,0].cpu().detach(),
-                                            histnorm='probability',name=name))                   
-        else:
-            fig.add_trace(go.Scatter(x=data[:,0].cpu().detach().numpy(), 
-                                            y=data[:,1].cpu().detach().numpy(),
-                                            mode='markers',name=name))
-            # fig.update_layout(yaxis_range=[-16,16], xaxis_range=[-16,16])
-        stats_and_figs[f'w2-{name}'] = get_w2(data_array[0], data)   
-    stats_and_figs['samples'] = fig  
-    return stats_and_figs
+def unprocess(x):
+    return (x+1)/2 
 
 def plot_32_mnist(x_t,file_name='mnist_samples.jpeg'):
     n_rows, n_cols = 4,8
@@ -72,7 +59,7 @@ def is_sb_sde(name):
 @click.option('--dataset',type=click.Choice(['mnist','spiral','checkerboard','cifar']), default='cifar')
 @click.option('--model_forward',type=click.Choice(['linear']), default='linear')
 @click.option('--model_backward',type=click.Choice(['DiT','unet','mlp', 'linear']), default='unet')
-@click.option('--encoder',type=str, default='cifar_vae_big_long/')
+@click.option('--encoder',type=str, default=None)
 @click.option('--sde',type=click.Choice(['vp','cld','sb', 'vsdm','momentum-sb','linear-momentum-sb']), default='linear-momentum-sb')
 @click.option('--damp_coef',type=float, default=1.)
 @click.option('--num_samples', type=int)
@@ -87,7 +74,8 @@ def training(**opts):
     rank = dist.get_rank()
     world_size = dist.get_world_size()
     device = rank % torch.cuda.device_count()
-    torch.manual_seed(opts.seed)
+    seed = opts.seed * world_size + rank 
+    torch.manual_seed(seed)
     torch.cuda.set_device(device)
     batch_size = opts.batch_size
     assert batch_size % world_size == 0, 'Batch size must be divisible by world size'
@@ -97,7 +85,6 @@ def training(**opts):
     dataset, out_shape = get_dataset(opts)
     dataset_type = get_dataset_type(opts.dataset)
     is_sb = is_sb_sde(opts.sde)
-    print('Is sb', is_sb)
     sde = get_sde(opts.sde)
     encode = opts.encoder is not None
     if encode:
@@ -110,13 +97,27 @@ def training(**opts):
     network_opts = dotdict({'out_shape' : out_shape, 'damp_coef' : opts.damp_coef})
     
     model_backward = get_model(opts.model_backward,sde, device,network_opts=network_opts)
-    model_backward.load_state_dict(torch.load(os.path.join(opts.load_from_ckpt,'backward.pt'), weights_only=True))
     print(f"Backward Model parameters: {sum(p.numel() for p in model_backward.parameters() if p.requires_grad)//1e6} M")
+    model_backward = EMA(model_backward)
+    state = torch.load(os.path.join(opts.load_from_ckpt, 'backward_ema.pt'), weights_only=True)
+    updated_dict = {}
+    for key, value in state.items():
+        # Remove 'module.' prefix if it exists
+        new_key = key.replace('module.', '')
+        updated_dict[new_key] = value
+    model_backward.load_state_dict(updated_dict)
 
     if is_sb:
         # We need a forward model
         model_forward  = get_model(opts.model_forward,sde,device,network_opts=network_opts)
-        model_forward.load_state_dict(torch.load(os.path.join(opts.load_from_ckpt,'forward.pt'), weights_only=True))
+        model_forward = EMA(model_forward)
+        state_f = torch.load(os.path.join(opts.load_from_ckpt,'forward_ema.pt'), weights_only=True)
+        updated_dict_f = {}
+        for key, value in state_f.items():
+            # Remove 'module.' prefix if it exists
+            new_key = key.replace('module.', '')
+            updated_dict_f[new_key] = value
+        model_forward.load_state_dict(updated_dict_f)
         print(f"Forward Model parameters: {sum(p.numel() for p in model_forward.parameters() if p.requires_grad)//1e6} M")
         sde.forward_score = model_forward
 
@@ -127,7 +128,8 @@ def training(**opts):
     for batch in tqdm(range(batches)):
         sampling_shape = (effective_batch, *network_opts.out_shape)
         cond = torch.randint(0,10,(effective_batch,), device=device)
-        new_data, _ = sde.sample(sampling_shape, device, cond=cond)
+        new_data, _ = sde.sample(sampling_shape, device, cond=cond, prob_flow=True)
+        new_data = unprocess(new_data)
         if encode:
             new_data = autoencoder.decode(new_data)
         folder = os.path.join(opts.dir, f'{batch}/{rank}')
@@ -138,10 +140,7 @@ def training(**opts):
             # np.save(os.path.join(folder, f'{i}.npy'), new_data[i].cpu().numpy()) 
             PIL.Image.fromarray(images_np[i], 'RGB').save(os.path.join(folder, f'{i}.png'))
         if opts.make_plots:
-            if dataset_type == 'toy':
-                relevant_log_info = toy_data_figs([new_data], ['normal'])
-                wandb.log(relevant_log_info)
-            elif dataset_type == 'image':
+            if dataset_type == 'image':
                 plot_32_mnist(new_data,os.path.join(opts.dir,'samples.png'))
 
         dist.barrier()

@@ -5,7 +5,7 @@ from typing import Union
 from utils.sde_lib import SDE, VP, CLD, LinearMomentumSchrodingerBridge, VSDM
 from utils.models import MLP, MatrixTimeEmbedding
 from utils.unet import ScoreNet
-from utils.networks import DhariwalUNet
+from utils.networks import SongUNet, DhariwalUNet
 from utils.DiT import DiT_S_2
 
 class PrecondVP(nn.Module):
@@ -13,11 +13,11 @@ class PrecondVP(nn.Module):
         super().__init__()
         self.net = net
         self.sde = sde
-        
     def forward(self, xt,t,cond=None):
         ones = [1] * (len(xt.shape)-1)
-        return self.net(xt,t,cond)/self.sde.marginal_prob_std(t).view(-1,*ones)
+        sigma = self.sde.marginal_prob_std(t).view(-1,*ones)
 
+        return -self.net(xt,t*999,cond)/sigma
 class PrecondCLD(nn.Module):
     def __init__(self, net, sde : CLD) -> None:
         super().__init__()
@@ -65,6 +65,7 @@ def get_model(name, sde : SDE, device, network_opts=None):
         out_channels = in_channels//(2 if augmented else 1)
         # model = ScoreNet(in_channels=in_channels, out_channels=out_channels)
         model = DhariwalUNet(img_resolution=network_opts.out_shape[-1], in_channels=in_channels, out_channels=out_channels)
+        # model = SongUNet(img_resolution=network_opts.out_shape[-1], in_channels=in_channels, out_channels=out_channels)
         return model.requires_grad_(True).to(device=device)
     elif name == 'DiT':
         in_channels = network_opts.out_shape[0] 

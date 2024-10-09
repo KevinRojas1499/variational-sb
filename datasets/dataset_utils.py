@@ -17,7 +17,7 @@ def get_dataset(opts) -> MyDataset:
         dataset = FashionMNIST('.', train=True, transform=transforms.Compose([transforms.ToTensor(),transforms.Resize((28,28))]), download=True)
         return dataset, [1,28,28]
     elif ds_name == 'cifar':
-        dataset= CIFAR10('.', train=True,transform=transforms.Compose([transforms.ToTensor()]), download=True)
+        dataset= CIFAR10('.', train=True,transform=transforms.Compose([transforms.ToTensor(),transforms.RandomHorizontalFlip(p=0.5)]), download=True)
         return dataset, [3,32,32]
     else:
         print('Dataset is not implemented')

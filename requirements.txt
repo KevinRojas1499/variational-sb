@@ -1,11 +1,14 @@
 click
 ema_pytorch
-# gluonts==0.15.1
-# lightning==2.4.0
+gluonts==0.15.1
+lightning==2.4.0
 matplotlib
 numpy
 POT
 # pts==1.4.8
+# pytorchts @ git+https://github.com/zalandoresearch/pytorch-ts.git@e359530a11c13e34fb57f6ceaff6542e57205e50
+# pip install git+https://github.com/zalandoresearch/pytorch-ts.git@e359530a11c13e34fb57f6ceaff6542e57205e50
+
 torch
 torchvision
 tqdm

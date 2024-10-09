@@ -42,6 +42,12 @@ def plot_32_mnist(x_t,file_name='mnist_samples.jpeg'):
     fig.savefig(file_name,bbox_inches='tight')
     # plt.close(fig) # TODO : Why is this not working?
 
+def process(x):
+    return 2 * x - 1
+
+def unprocess(x):
+    return (x+1)/2
+
 def get_dataset_type(name):
     if name in ['spiral','checkerboard']:
         return 'toy'
@@ -67,7 +73,7 @@ def is_sb_sde(name):
 @click.option('--seed', type=int, default=42)
 @click.option('--optimizer',type=click.Choice(['adam','adamw']), default='adamw')
 @click.option('--lr', type=float, default=3e-4)
-@click.option('--ema_beta', type=float, default=.99)
+@click.option('--ema_beta', type=float, default=.99999)
 @click.option('--clip_grads', is_flag=True, default=True)
 @click.option('--batch_size', type=int, default=128)
 @click.option('--log_rate',type=int,default=5000)
@@ -125,7 +131,7 @@ def training(**opts):
     if is_sb:
         # We need a forward model
         model_forward  = DDP(get_model(opts.model_forward,sde,device,network_opts=network_opts))
-        opt_f, ema_forward, sched_f = build_optimizer_ema_sched(model_forward,opts.optimizer,opts.lr, step_size=1000)
+        opt_f, ema_forward, sched_f = build_optimizer_ema_sched(model_forward,opts.optimizer,opts.lr, step_size=100)
         sde.forward_score, sampling_sde.forward_score = model_forward, ema_forward
         print(f"Forward Model parameters: {sum(p.numel() for p in model_forward.parameters() if p.requires_grad)//1e6} M")
     
@@ -168,6 +174,7 @@ def training(**opts):
             if encode:
                 data = autoencoder.encode(data)
             
+            data = process(data)
             loss = routine.training_iteration(cur_itr,data, cond)           
             dist.all_reduce(loss)
             loss = loss/world_size 
@@ -207,6 +214,8 @@ def training(**opts):
                 
                 new_data, _ = sde.sample(sampling_shape, device,cond=labels)
                 new_data_ema, _  = sampling_sde.sample(sampling_shape, device, cond=labels)
+                new_data = unprocess(new_data)
+                new_data_ema = unprocess(new_data_ema)
                 if encode:
                     new_data = autoencoder.decode(new_data)
                     new_data_ema = autoencoder.decode(new_data_ema)

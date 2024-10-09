@@ -1,0 +1,28 @@
+backward_opt_steps: 250
+beta_max: 6.0
+damp_coef: 0.9
+dsm_cool_down: 1000
+dsm_warm_up: 500
+forward_opt_steps: 50
+lr: 0.001
+model_kwargs:
+  cardinality:
+  - 1
+  context_length: 72
+  default_scale: 0.0
+  dropout_rate: 0.1
+  embedding_dimension: null
+  freq: H
+  hidden_size: 64
+  input_size: 370
+  lags_seq: null
+  num_feat_dynamic_real: 5
+  num_feat_static_cat: 1
+  num_feat_static_real: 1
+  num_layers: 2
+  num_parallel_samples: 100
+  prediction_length: 24
+  scaling: std
+patience: 10
+sde: linear-momentum-sb
+weight_decay: 1.0e-08

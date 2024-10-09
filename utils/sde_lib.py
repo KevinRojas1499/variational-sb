@@ -2,14 +2,12 @@
 import abc
 import torch
 import numpy as np
-import matplotlib.pyplot as plt
 from tqdm import tqdm
 
 def reshape_t(t, xt):
   ones = [1] * len(xt.shape[1:])
   return t.reshape(-1, *ones)
 
-k = 0
 class SDE(abc.ABC):
   def __init__(self, is_augmented):
     # Augmentation refers to adding momentum
@@ -41,32 +39,19 @@ class SDE(abc.ABC):
   @torch.no_grad()
   def sample(self, shape, device, backward=True, 
              in_cond=None, prob_flow=True, 
-             cond=None, n_time_pts=50, return_traj=False):
+             cond=None, n_time_pts=1000, return_traj=False):
     xt = self.prior_sampling(shape,device) if backward else in_cond
     assert xt is not None
-    # step_indices = torch.arange(n_time_pts, device=device)
-    # rho = 7
-    # time_pts = (self.T ** (1 / rho) + step_indices / (n_time_pts - 1) * (self.delta ** (1 / rho) - self.T ** (1 / rho))) ** rho
-    # time_pts = torch.cat([time_pts, torch.zeros_like(time_pts[:1])]) # t_N = 0
-    # time_pts = time_pts.flip(dims=(0,))
-
-    time_pts = torch.linspace(0. if backward else self.delta, self.T, n_time_pts, device=device)
+    time_pts = torch.linspace(0. if backward else self.delta, self.T - self.delta, n_time_pts, device=device)
+    time_pts = torch.cat((time_pts, torch.ones_like(time_pts[:1]) * self.T))
     if return_traj:
       trajectories = torch.empty((xt.shape[0], n_time_pts, *xt.shape[1:]),device=xt.device) 
-    for i, t in tqdm(enumerate(time_pts), total=n_time_pts, leave=False):
+    
+    N = time_pts.shape[0]
+    for i, t in tqdm(enumerate(time_pts), total=N, leave=False):
       if return_traj:
         trajectories[:,i] = xt
-      if i == 0 or i == n_time_pts-1:
-        global k
-        # plt.clf()
-        # plt.xlim(-20,40)
-        # plt.ylim(-20,40)
-        # noise = torch.randn_like(xt)
-        # plt.scatter(xt[:,0].cpu().numpy(), xt[:,1].cpu().numpy(),s=3,label='xt')
-        # plt.scatter(noise[:,0].cpu().numpy(), noise[:,1].cpu().numpy(),s=3,alpha=.3, label='noise')
-        # plt.legend()
-        # plt.savefig(f'./trajectory/{i}_{k}.png')
-      if i == n_time_pts - 1:
+      if i == N - 1:
         break
       dt = time_pts[i+1] - t 
       dt = -dt if backward else dt 
@@ -74,7 +59,7 @@ class SDE(abc.ABC):
       t_shape = t_shape.unsqueeze(-1).expand(xt.shape[0])
       if prob_flow:
         drift = self.probability_flow_drift(xt,t_shape, cond)
-        if backward and i+1 != n_time_pts - 1:
+        if backward and i+1 != N-1:
           xt_hat = xt + drift * dt
           t_hat = self.T - time_pts[i+1] if backward else time_pts[i+1]
           t_hat = t_hat.unsqueeze(-1).expand(xt.shape[0])
@@ -83,9 +68,9 @@ class SDE(abc.ABC):
           xt = xt + drift * dt
       else:
         drift = self.drift(xt,t_shape, forward=(not backward),cond=cond)
-        xt = xt + drift * dt + torch.randn_like(xt) * self.diffusion(xt,t) * dt.abs().sqrt()
-
-    k+=1
+        xt = xt + drift * dt 
+        if i +1 != N-1:
+          xt += torch.randn_like(xt) * self.diffusion(xt,self.T - t) * dt.abs().sqrt()
     
     xt = xt.chunk(2,dim=1)[0] if self.is_augmented else xt
     return xt, (trajectories if return_traj else None)
@@ -105,20 +90,18 @@ class VP(LinearSDE):
     LinearSDE.__init__(self,backward_model=backward_model,is_augmented=False)
     self._T = T
     self.delta = delta
-    self.beta_max = beta_max
+    self.beta_max = 19.9
 
   @property
   def T(self):
     return self._T
   
   def beta(self, t):
-    return self.beta_max
-    b_min = 0.01
+    b_min = 0.1
     return b_min+ t*(self.beta_max-b_min) # self.beta_max
   
   def beta_int(self, t):
-    return self.beta_max * t
-    b_min = 0.01
+    b_min = 0.1
     return  b_min * t +(self.beta_max-b_min) * t**2/2
   
   def marginal_prob(self, x, t):

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #SBATCH --account=gts-mtao8
-#SBATCH -N4 --gres=gpu:A100:1
+#SBATCH -N8 --gres=gpu:A100:1
 #SBATCH --gres-flags=enforce-binding
 #SBATCH -C A100-40GB
 #SBATCH -t24:00:00
@@ -22,10 +22,12 @@ head_node_ip=$(srun --nodes=1 --ntasks=1 -w "$head_node" hostname --ip-address)
 echo Node IP: $head_node_ip
 export LOGLEVEL=INFO
 
-srun torchrun \
-    --nnodes 4 \
-    --nproc_per_node 1 \
-    --rdzv_id $RANDOM \
-    --rdzv_backend c10d \
-    --rdzv_endpoint $head_node_ip:29500 \
+srun torchrun --nnodes 8 --nproc_per_node 1 --rdzv_id $RANDOM --rdzv_backend c10d --rdzv_endpoint $head_node_ip:29500 \
     training.py --dir experiments/cifar-unet-3/ --load_from_ckpt experiments/cifar-unet-3/itr_230000 --batch_size 256 --disable_wandb
+
+
+srun torchrun --nnodes 8 --nproc_per_node 1 --rdzv_id $RANDOM --rdzv_backend c10d --rdzv_endpoint $head_node_ip:29500 \
+    sampling.py --dir samples_dir --load_from_ckpt experiments/cifar-ema/itr_350000 --batch_size 1000 --num_samples 30000
+
+
+# torchrun sampling.py --sde vp --dir samples_vp --load_from_ckpt vp-song.pt --batch_size 32 --num_samples 32

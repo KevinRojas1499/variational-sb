@@ -7,8 +7,11 @@
 *.pt
 *.gif
 time_series/results/
-results/
+results/*
 /FashionMNIST/
 cifar-10-batches-py/
 cifar-10-python.tar.gz
 *.npy
+results2/
+results3/
+resuslts4/
