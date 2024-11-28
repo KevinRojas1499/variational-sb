@@ -45,11 +45,11 @@ class PrecondGeneral(nn.Module):
             xt,vt = zt.chunk(2,dim=1)
             lxx, lxv, lvv = L[...,0,0], L[...,0,1], L[...,1,1]
         
-            return - self.net(zt,t,cond)/lvv
+            return - self.net(zt,t * 999,cond)/lvv
         
         return - self.net(zt,t,cond)/L
 
-def get_model(name, sde : SDE, device, network_opts=None):
+def get_model(name, sde : SDE, device, label_dim=0, network_opts=None):
     print(network_opts)
     # Returns model, ema
     augmented = sde.is_augmented
@@ -64,7 +64,7 @@ def get_model(name, sde : SDE, device, network_opts=None):
         in_channels = network_opts.out_shape[0] 
         out_channels = in_channels//(2 if augmented else 1)
         # model = ScoreNet(in_channels=in_channels, out_channels=out_channels)
-        model = DhariwalUNet(img_resolution=network_opts.out_shape[-1], in_channels=in_channels, out_channels=out_channels)
+        model = DhariwalUNet(img_resolution=network_opts.out_shape[-1], in_channels=in_channels, out_channels=out_channels, label_dim=label_dim)
         # model = SongUNet(img_resolution=network_opts.out_shape[-1], in_channels=in_channels, out_channels=out_channels)
         return model.requires_grad_(True).to(device=device)
     elif name == 'DiT':

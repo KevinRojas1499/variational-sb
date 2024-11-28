@@ -68,7 +68,7 @@ def is_sb_sde(name):
 @click.option('--dsm_warm_up', type=int, default=0, help='Perform first iterations using just DSM')
 @click.option('--dsm_cool_down', type=int, default=0, help='Stop optimizing the forward model for these last iterations')
 @click.option('--forward_opt_steps', type=int, default=100, help='Number of forward opt steps in alternate training scheme')
-@click.option('--backward_opt_steps', type=int, default=500, help='Number of backward opt steps in alternate training scheme')
+@click.option('--backward_opt_steps', type=int, default=99000, help='Number of backward opt steps in alternate training scheme')
 # Training Options
 @click.option('--seed', type=int, default=42)
 @click.option('--optimizer',type=click.Choice(['adam','adamw']), default='adamw')
@@ -77,7 +77,7 @@ def is_sb_sde(name):
 @click.option('--clip_grads', is_flag=True, default=True)
 @click.option('--batch_size', type=int, default=128)
 @click.option('--log_rate',type=int,default=5000)
-@click.option('--num_epochs',type=int,default=400)
+@click.option('--num_epochs',type=int,default=1000)
 @click.option('--dir',type=str)
 @click.option('--load_from_ckpt', type=str)
 @click.option('--disable_wandb',is_flag=True,default=False)
@@ -99,7 +99,7 @@ def training(**opts):
     print(device)
     enable_wandb = not opts.disable_wandb and rank == 0
     
-    dataset, out_shape = get_dataset(opts)
+    dataset, out_shape, label_dim = get_dataset(opts)
     dataset_type = get_dataset_type(opts.dataset)
     if dataset_type == 'toy':
         data_loader = dataset
@@ -123,7 +123,7 @@ def training(**opts):
     if sde.is_augmented:
         out_shape[0] *= 2 
     network_opts = dotdict({'out_shape' : out_shape, 'damp_coef' : opts.damp_coef})
-    model_backward = DDP(get_model(opts.model_backward,sde, device,network_opts=network_opts))
+    model_backward = DDP(get_model(opts.model_backward,sde, device,label_dim=label_dim, network_opts=network_opts))
     opt_b, ema_backward, sched_b = build_optimizer_ema_sched(model_backward,opts.optimizer,opts.lr, step_size=10000)
     sde.backward_score, sampling_sde.backward_score = model_backward, ema_backward
     print(f"Backward Model parameters: {sum(p.numel() for p in model_backward.parameters() if p.requires_grad)//1e6} M")
@@ -131,7 +131,7 @@ def training(**opts):
     if is_sb:
         # We need a forward model
         model_forward  = DDP(get_model(opts.model_forward,sde,device,network_opts=network_opts))
-        opt_f, ema_forward, sched_f = build_optimizer_ema_sched(model_forward,opts.optimizer,opts.lr, step_size=100)
+        opt_f, ema_forward, sched_f = build_optimizer_ema_sched(model_forward,opts.optimizer,opts.lr/100, step_size=100)
         sde.forward_score, sampling_sde.forward_score = model_forward, ema_forward
         print(f"Forward Model parameters: {sum(p.numel() for p in model_forward.parameters() if p.requires_grad)//1e6} M")
     
@@ -196,7 +196,7 @@ def training(**opts):
                 #     print('EMA\n' ,  [param for param in ema_forward.parameters()])
                 # Save Checkpoints
                 path = os.path.join(opts.dir, f'itr_{cur_itr+1}/')
-                os.makedirs(path,exist_ok=True) # Still wondering it this is the best idea
+                os.makedirs(path,exist_ok=True) 
                 if rank == 0:
                     torch.save(model_backward.module.state_dict(),os.path.join(path, 'backward.pt'))
                     torch.save(ema_backward.state_dict(),os.path.join(path, 'backward_ema.pt'))

@@ -34,7 +34,7 @@ class MatrixTimeEmbedding(torch.nn.Module):
         self.is_augmented = is_augmented
         self.under_damp_coeff = under_damp_coeff
         self.ones = [-1] * len(self.out_shape)
-        self._lambda = nn.Parameter(.1 *torch.ones(self.real_dim))
+        self._lambda = nn.Parameter(.01 *torch.ones(self.real_dim))
     
     @property
     def Lambda(self):

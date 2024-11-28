@@ -242,6 +242,7 @@ class DhariwalUNet(torch.nn.Module):
         block_kwargs = dict(emb_channels=emb_channels, channels_per_head=64, dropout=dropout, init=init, init_zero=init_zero)
 
         # Mapping.
+        self.label_dim = label_dim
         self.map_noise = PositionalEmbedding(num_channels=model_channels)
         self.map_augment = Linear(in_features=augment_dim, out_features=model_channels, bias=False, **init_zero) if augment_dim else None
         self.map_layer0 = Linear(in_features=model_channels, out_features=emb_channels, **init)
@@ -284,6 +285,8 @@ class DhariwalUNet(torch.nn.Module):
     def forward(self, x, noise_labels, cond, augment_labels=None):
         # Mapping.
         emb = self.map_noise(noise_labels)
+        if len(cond.shape) == 1 and self.label_dim > 0:
+            cond = torch.eye(self.label_dim, device=x.device)[cond]
         if self.map_augment is not None and augment_labels is not None:
             emb = emb + self.map_augment(augment_labels)
         emb = silu(self.map_layer0(emb))
@@ -405,6 +408,9 @@ class SongUNet(torch.nn.Module):
         # Mapping.
         emb = self.map_noise(noise_labels)
         emb = emb.reshape(emb.shape[0], 2, -1).flip(1).reshape(*emb.shape) # swap sin/cos
+
+        if class_labels.shape == 1 and self.label_dim > 0:
+            class_labels = torch.eye(self.label_dim, device=x.device)[class_labels]
         if self.map_label is not None:
             tmp = class_labels
             if self.training and self.label_dropout:

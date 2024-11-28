@@ -39,7 +39,7 @@ class SDE(abc.ABC):
   @torch.no_grad()
   def sample(self, shape, device, backward=True, 
              in_cond=None, prob_flow=True, 
-             cond=None, n_time_pts=1000, return_traj=False):
+             cond=None, n_time_pts=125, return_traj=False):
     xt = self.prior_sampling(shape,device) if backward else in_cond
     assert xt is not None
     time_pts = torch.linspace(0. if backward else self.delta, self.T - self.delta, n_time_pts, device=device)

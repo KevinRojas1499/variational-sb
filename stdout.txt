@@ -1,0 +1,160 @@
+Starting rank=6, seed=678, world_size=16.
+Starting rank=1, seed=673, world_size=16.
+{'dir': 'experiments/sparta/', 'load_from_ckpt': 'experiments/sparta/itr_70000', 'batch_size': 256, 'disable_wandb': True, 'damp_coef': 0.9, 'dataset': 'cifar', 'model_forward': 'linear', 'model_backward': 'unet', 'encoder': None, 'precondition': True, 'sde': 'linear-momentum-sb', 'dsm_warm_up': 0, 'dsm_cool_down': 0, 'forward_opt_steps': 100, 'backward_opt_steps': 500, 'seed': 42, 'optimizer': 'adamw', 'lr': 0.0003, 'ema_beta': 0.9999, 'clip_grads': True, 'log_rate': 5000, 'num_epochs': 400}
+{'dir': 'experiments/sparta/', 'load_from_ckpt': 'experiments/sparta/itr_70000', 'batch_size': 256, 'disable_wandb': True, 'damp_coef': 0.9, 'dataset': 'cifar', 'model_forward': 'linear', 'model_backward': 'unet', 'encoder': None, 'precondition': True, 'sde': 'linear-momentum-sb', 'dsm_warm_up': 0, 'dsm_cool_down': 0, 'forward_opt_steps': 100, 'backward_opt_steps': 500, 'seed': 42, 'optimizer': 'adamw', 'lr': 0.0003, 'ema_beta': 0.9999, 'clip_grads': True, 'log_rate': 5000, 'num_epochs': 400}
+0
+0
+Starting rank=8, seed=680, world_size=16.
+Starting rank=10, seed=682, world_size=16.
+Starting rank=12, seed=684, world_size=16.
+Starting rank=3, seed=675, world_size=16.
+{'dir': 'experiments/sparta/', 'load_from_ckpt': 'experiments/sparta/itr_70000', 'batch_size': 256, 'disable_wandb': True, 'damp_coef': 0.9, 'dataset': 'cifar', 'model_forward': 'linear', 'model_backward': 'unet', 'encoder': None, 'precondition': True, 'sde': 'linear-momentum-sb', 'dsm_warm_up': 0, 'dsm_cool_down': 0, 'forward_opt_steps': 100, 'backward_opt_steps': 500, 'seed': 42, 'optimizer': 'adamw', 'lr': 0.0003, 'ema_beta': 0.9999, 'clip_grads': True, 'log_rate': 5000, 'num_epochs': 400}
+0
+{'dir': 'experiments/sparta/', 'load_from_ckpt': 'experiments/sparta/itr_70000', 'batch_size': 256, 'disable_wandb': True, 'damp_coef': 0.9, 'dataset': 'cifar', 'model_forward': 'linear', 'model_backward': 'unet', 'encoder': None, 'precondition': True, 'sde': 'linear-momentum-sb', 'dsm_warm_up': 0, 'dsm_cool_down': 0, 'forward_opt_steps': 100, 'backward_opt_steps': 500, 'seed': 42, 'optimizer': 'adamw', 'lr': 0.0003, 'ema_beta': 0.9999, 'clip_grads': True, 'log_rate': 5000, 'num_epochs': 400}
+0
+{'dir': 'experiments/sparta/', 'load_from_ckpt': 'experiments/sparta/itr_70000', 'batch_size': 256, 'disable_wandb': True, 'damp_coef': 0.9, 'dataset': 'cifar', 'model_forward': 'linear', 'model_backward': 'unet', 'encoder': None, 'precondition': True, 'sde': 'linear-momentum-sb', 'dsm_warm_up': 0, 'dsm_cool_down': 0, 'forward_opt_steps': 100, 'backward_opt_steps': 500, 'seed': 42, 'optimizer': 'adamw', 'lr': 0.0003, 'ema_beta': 0.9999, 'clip_grads': True, 'log_rate': 5000, 'num_epochs': 400}
+{'dir': 'experiments/sparta/', 'load_from_ckpt': 'experiments/sparta/itr_70000', 'batch_size': 256, 'disable_wandb': True, 'damp_coef': 0.9, 'dataset': 'cifar', 'model_forward': 'linear', 'model_backward': 'unet', 'encoder': None, 'precondition': True, 'sde': 'linear-momentum-sb', 'dsm_warm_up': 0, 'dsm_cool_down': 0, 'forward_opt_steps': 100, 'backward_opt_steps': 500, 'seed': 42, 'optimizer': 'adamw', 'lr': 0.0003, 'ema_beta': 0.9999, 'clip_grads': True, 'log_rate': 5000, 'num_epochs': 400}
+0
+0
+Starting rank=15, seed=687, world_size=16.
+Starting rank=5, seed=677, world_size=16.
+{'dir': 'experiments/sparta/', 'load_from_ckpt': 'experiments/sparta/itr_70000', 'batch_size': 256, 'disable_wandb': True, 'damp_coef': 0.9, 'dataset': 'cifar', 'model_forward': 'linear', 'model_backward': 'unet', 'encoder': None, 'precondition': True, 'sde': 'linear-momentum-sb', 'dsm_warm_up': 0, 'dsm_cool_down': 0, 'forward_opt_steps': 100, 'backward_opt_steps': 500, 'seed': 42, 'optimizer': 'adamw', 'lr': 0.0003, 'ema_beta': 0.9999, 'clip_grads': True, 'log_rate': 5000, 'num_epochs': 400}
+0
+{'dir': 'experiments/sparta/', 'load_from_ckpt': 'experiments/sparta/itr_70000', 'batch_size': 256, 'disable_wandb': True, 'damp_coef': 0.9, 'dataset': 'cifar', 'model_forward': 'linear', 'model_backward': 'unet', 'encoder': None, 'precondition': True, 'sde': 'linear-momentum-sb', 'dsm_warm_up': 0, 'dsm_cool_down': 0, 'forward_opt_steps': 100, 'backward_opt_steps': 500, 'seed': 42, 'optimizer': 'adamw', 'lr': 0.0003, 'ema_beta': 0.9999, 'clip_grads': True, 'log_rate': 5000, 'num_epochs': 400}
+0
+Starting rank=11, seed=683, world_size=16.
+{'dir': 'experiments/sparta/', 'load_from_ckpt': 'experiments/sparta/itr_70000', 'batch_size': 256, 'disable_wandb': True, 'damp_coef': 0.9, 'dataset': 'cifar', 'model_forward': 'linear', 'model_backward': 'unet', 'encoder': None, 'precondition': True, 'sde': 'linear-momentum-sb', 'dsm_warm_up': 0, 'dsm_cool_down': 0, 'forward_opt_steps': 100, 'backward_opt_steps': 500, 'seed': 42, 'optimizer': 'adamw', 'lr': 0.0003, 'ema_beta': 0.9999, 'clip_grads': True, 'log_rate': 5000, 'num_epochs': 400}
+0
+Starting rank=9, seed=681, world_size=16.
+Starting rank=7, seed=679, world_size=16.
+Starting rank=4, seed=676, world_size=16.
+Starting rank=0, seed=672, world_size=16.
+Starting rank=2, seed=674, world_size=16.
+Starting rank=13, seed=685, world_size=16.
+{'dir': 'experiments/sparta/', 'load_from_ckpt': 'experiments/sparta/itr_70000', 'batch_size': 256, 'disable_wandb': True, 'damp_coef': 0.9, 'dataset': 'cifar', 'model_forward': 'linear', 'model_backward': 'unet', 'encoder': None, 'precondition': True, 'sde': 'linear-momentum-sb', 'dsm_warm_up': 0, 'dsm_cool_down': 0, 'forward_opt_steps': 100, 'backward_opt_steps': 500, 'seed': 42, 'optimizer': 'adamw', 'lr': 0.0003, 'ema_beta': 0.9999, 'clip_grads': True, 'log_rate': 5000, 'num_epochs': 400}
+0
+{'dir': 'experiments/sparta/', 'load_from_ckpt': 'experiments/sparta/itr_70000', 'batch_size': 256, 'disable_wandb': True, 'damp_coef': 0.9, 'dataset': 'cifar', 'model_forward': 'linear', 'model_backward': 'unet', 'encoder': None, 'precondition': True, 'sde': 'linear-momentum-sb', 'dsm_warm_up': 0, 'dsm_cool_down': 0, 'forward_opt_steps': 100, 'backward_opt_steps': 500, 'seed': 42, 'optimizer': 'adamw', 'lr': 0.0003, 'ema_beta': 0.9999, 'clip_grads': True, 'log_rate': 5000, 'num_epochs': 400}
+0
+{'dir': 'experiments/sparta/', 'load_from_ckpt': 'experiments/sparta/itr_70000', 'batch_size': 256, 'disable_wandb': True, 'damp_coef': 0.9, 'dataset': 'cifar', 'model_forward': 'linear', 'model_backward': 'unet', 'encoder': None, 'precondition': True, 'sde': 'linear-momentum-sb', 'dsm_warm_up': 0, 'dsm_cool_down': 0, 'forward_opt_steps': 100, 'backward_opt_steps': 500, 'seed': 42, 'optimizer': 'adamw', 'lr': 0.0003, 'ema_beta': 0.9999, 'clip_grads': True, 'log_rate': 5000, 'num_epochs': 400}
+0
+{'dir': 'experiments/sparta/', 'load_from_ckpt': 'experiments/sparta/itr_70000', 'batch_size': 256, 'disable_wandb': True, 'damp_coef': 0.9, 'dataset': 'cifar', 'model_forward': 'linear', 'model_backward': 'unet', 'encoder': None, 'precondition': True, 'sde': 'linear-momentum-sb', 'dsm_warm_up': 0, 'dsm_cool_down': 0, 'forward_opt_steps': 100, 'backward_opt_steps': 500, 'seed': 42, 'optimizer': 'adamw', 'lr': 0.0003, 'ema_beta': 0.9999, 'clip_grads': True, 'log_rate': 5000, 'num_epochs': 400}
+0
+{'dir': 'experiments/sparta/', 'load_from_ckpt': 'experiments/sparta/itr_70000', 'batch_size': 256, 'disable_wandb': True, 'damp_coef': 0.9, 'dataset': 'cifar', 'model_forward': 'linear', 'model_backward': 'unet', 'encoder': None, 'precondition': True, 'sde': 'linear-momentum-sb', 'dsm_warm_up': 0, 'dsm_cool_down': 0, 'forward_opt_steps': 100, 'backward_opt_steps': 500, 'seed': 42, 'optimizer': 'adamw', 'lr': 0.0003, 'ema_beta': 0.9999, 'clip_grads': True, 'log_rate': 5000, 'num_epochs': 400}
+0
+{'dir': 'experiments/sparta/', 'load_from_ckpt': 'experiments/sparta/itr_70000', 'batch_size': 256, 'disable_wandb': True, 'damp_coef': 0.9, 'dataset': 'cifar', 'model_forward': 'linear', 'model_backward': 'unet', 'encoder': None, 'precondition': True, 'sde': 'linear-momentum-sb', 'dsm_warm_up': 0, 'dsm_cool_down': 0, 'forward_opt_steps': 100, 'backward_opt_steps': 500, 'seed': 42, 'optimizer': 'adamw', 'lr': 0.0003, 'ema_beta': 0.9999, 'clip_grads': True, 'log_rate': 5000, 'num_epochs': 400}
+0
+Starting rank=14, seed=686, world_size=16.
+{'dir': 'experiments/sparta/', 'load_from_ckpt': 'experiments/sparta/itr_70000', 'batch_size': 256, 'disable_wandb': True, 'damp_coef': 0.9, 'dataset': 'cifar', 'model_forward': 'linear', 'model_backward': 'unet', 'encoder': None, 'precondition': True, 'sde': 'linear-momentum-sb', 'dsm_warm_up': 0, 'dsm_cool_down': 0, 'forward_opt_steps': 100, 'backward_opt_steps': 500, 'seed': 42, 'optimizer': 'adamw', 'lr': 0.0003, 'ema_beta': 0.9999, 'clip_grads': True, 'log_rate': 5000, 'num_epochs': 400}
+0
+Files already downloaded and verified
+Files already downloaded and verified
+Files already downloaded and verified
+Files already downloaded and verified
+Files already downloaded and verified
+Files already downloaded and verified
+Files already downloaded and verified
+Files already downloaded and verified
+Files already downloaded and verified
+Files already downloaded and verified
+Files already downloaded and verified
+Files already downloaded and verified
+Files already downloaded and verified
+Files already downloaded and verified
+Files already downloaded and verified
+Files already downloaded and verified
+{'out_shape': [6, 32, 32], 'damp_coef': 0.9}
+{'out_shape': [6, 32, 32], 'damp_coef': 0.9}
+{'out_shape': [6, 32, 32], 'damp_coef': 0.9}
+{'out_shape': [6, 32, 32], 'damp_coef': 0.9}
+{'out_shape': [6, 32, 32], 'damp_coef': 0.9}
+{'out_shape': [6, 32, 32], 'damp_coef': 0.9}
+{'out_shape': [6, 32, 32], 'damp_coef': 0.9}
+{'out_shape': [6, 32, 32], 'damp_coef': 0.9}
+{'out_shape': [6, 32, 32], 'damp_coef': 0.9}
+{'out_shape': [6, 32, 32], 'damp_coef': 0.9}
+{'out_shape': [6, 32, 32], 'damp_coef': 0.9}
+{'out_shape': [6, 32, 32], 'damp_coef': 0.9}
+{'out_shape': [6, 32, 32], 'damp_coef': 0.9}
+{'out_shape': [6, 32, 32], 'damp_coef': 0.9}
+{'out_shape': [6, 32, 32], 'damp_coef': 0.9}
+{'out_shape': [6, 32, 32], 'damp_coef': 0.9}
+Backward Model parameters: 53.0 M
+{'out_shape': [6, 32, 32], 'damp_coef': 0.9}
+Backward Model parameters: 53.0 M
+{'out_shape': [6, 32, 32], 'damp_coef': 0.9}
+Backward Model parameters: 53.0 M
+{'out_shape': [6, 32, 32], 'damp_coef': 0.9}
+Backward Model parameters: 53.0 M
+Backward Model parameters: 53.0 M
+{'out_shape': [6, 32, 32], 'damp_coef': 0.9}
+{'out_shape': [6, 32, 32], 'damp_coef': 0.9}
+Backward Model parameters: 53.0 M
+{'out_shape': [6, 32, 32], 'damp_coef': 0.9}
+Backward Model parameters: 53.0 M
+{'out_shape': [6, 32, 32], 'damp_coef': 0.9}
+Backward Model parameters: 53.0 M
+{'out_shape': [6, 32, 32], 'damp_coef': 0.9}
+Backward Model parameters: 53.0 M
+{'out_shape': [6, 32, 32], 'damp_coef': 0.9}
+Backward Model parameters: 53.0 M
+{'out_shape': [6, 32, 32], 'damp_coef': 0.9}
+Backward Model parameters: 53.0 M
+{'out_shape': [6, 32, 32], 'damp_coef': 0.9}
+Backward Model parameters: 53.0 M
+{'out_shape': [6, 32, 32], 'damp_coef': 0.9}
+Backward Model parameters: 53.0 M
+{'out_shape': [6, 32, 32], 'damp_coef': 0.9}
+Backward Model parameters: 53.0 M
+{'out_shape': [6, 32, 32], 'damp_coef': 0.9}
+Backward Model parameters: 53.0 M
+Backward Model parameters: 53.0 M
+{'out_shape': [6, 32, 32], 'damp_coef': 0.9}
+{'out_shape': [6, 32, 32], 'damp_coef': 0.9}
+Forward Model parameters: 0.0 M
+Forward Model parameters: 0.0 M
+Forward Model parameters: 0.0 M
+Loading checkpoint at experiments/sparta/itr_70000, now starting at 70000
+Loading checkpoint at experiments/sparta/itr_70000, now starting at 70000
+Loading checkpoint at experiments/sparta/itr_70000, now starting at 70000
+Forward Model parameters: 0.0 M
+Loading checkpoint at experiments/sparta/itr_70000, now starting at 70000
+Forward Model parameters: 0.0 M
+Forward Model parameters: 0.0 M
+Forward Model parameters: 0.0 M
+Forward Model parameters: 0.0 M
+Forward Model parameters: 0.0 M
+Loading checkpoint at experiments/sparta/itr_70000, now starting at 70000
+Loading checkpoint at experiments/sparta/itr_70000, now starting at 70000
+Forward Model parameters: 0.0 M
+Loading checkpoint at experiments/sparta/itr_70000, now starting at 70000
+Loading checkpoint at experiments/sparta/itr_70000, now starting at 70000
+Forward Model parameters: 0.0 M
+Forward Model parameters: 0.0 M
+Loading checkpoint at experiments/sparta/itr_70000, now starting at 70000
+Loading checkpoint at experiments/sparta/itr_70000, now starting at 70000
+Loading checkpoint at experiments/sparta/itr_70000, now starting at 70000
+Forward Model parameters: 0.0 M
+Forward Model parameters: 0.0 M
+Loading checkpoint at experiments/sparta/itr_70000, now starting at 70000
+Loading checkpoint at experiments/sparta/itr_70000, now starting at 70000
+Loading checkpoint at experiments/sparta/itr_70000, now starting at 70000
+Forward Model parameters: 0.0 M
+Loading checkpoint at experiments/sparta/itr_70000, now starting at 70000
+Forward Model parameters: 0.0 M
+Loading checkpoint at experiments/sparta/itr_70000, now starting at 70000
+Running for 78000 iterations
+Running for 78000 iterations
+Running for 78000 iterations
+Running for 78000 iterations
+Running for 78000 iterations
+Running for 78000 iterations
+Running for 78000 iterations
+Running for 78000 iterations
+Running for 78000 iterations
+Running for 78000 iterations
+Running for 78000 iterations
+Running for 78000 iterations
+Running for 78000 iterations
+Running for 78000 iterations
+Running for 78000 iterations
+Running for 78000 iterations

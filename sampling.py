@@ -62,12 +62,14 @@ def is_sb_sde(name):
 @click.option('--encoder',type=str, default=None)
 @click.option('--sde',type=click.Choice(['vp','cld','sb', 'vsdm','momentum-sb','linear-momentum-sb']), default='linear-momentum-sb')
 @click.option('--damp_coef',type=float, default=1.)
+@click.option('--num_steps', type=int, default=100)
 @click.option('--num_samples', type=int)
 @click.option('--batch_size', type=int, default=100)
 @click.option('--seed', type=int, default=42)
 @click.option('--dir',type=str)
 @click.option('--make_plots', is_flag=True, default=False)
 @click.option('--load_from_ckpt', type=str)
+@click.option('--not_ema', is_flag=True, default=False)
 def training(**opts):
     opts = dotdict(opts)
     dist.init_process_group('nccl')
@@ -83,7 +85,6 @@ def training(**opts):
     print(opts)
     print(f'Initializing {rank} with {device}')
     dataset, out_shape = get_dataset(opts)
-    dataset_type = get_dataset_type(opts.dataset)
     is_sb = is_sb_sde(opts.sde)
     sde = get_sde(opts.sde)
     encode = opts.encoder is not None
@@ -96,10 +97,16 @@ def training(**opts):
         out_shape[0] *= 2 
     network_opts = dotdict({'out_shape' : out_shape, 'damp_coef' : opts.damp_coef})
     
+    
+    use_ema = not opts.not_ema
     model_backward = get_model(opts.model_backward,sde, device,network_opts=network_opts)
     print(f"Backward Model parameters: {sum(p.numel() for p in model_backward.parameters() if p.requires_grad)//1e6} M")
-    model_backward = EMA(model_backward)
-    state = torch.load(os.path.join(opts.load_from_ckpt, 'backward_ema.pt'), weights_only=True)
+    if use_ema:
+        model_backward = EMA(model_backward)
+        state = torch.load(os.path.join(opts.load_from_ckpt, 'backward_ema.pt'), weights_only=True)
+    else:
+        state = torch.load(os.path.join(opts.load_from_ckpt, 'backward.pt'), weights_only=True)
+        # state = torch.load(os.path.join(opts.load_from_ckpt), weights_only=True)
     updated_dict = {}
     for key, value in state.items():
         # Remove 'module.' prefix if it exists
@@ -110,8 +117,12 @@ def training(**opts):
     if is_sb:
         # We need a forward model
         model_forward  = get_model(opts.model_forward,sde,device,network_opts=network_opts)
-        model_forward = EMA(model_forward)
-        state_f = torch.load(os.path.join(opts.load_from_ckpt,'forward_ema.pt'), weights_only=True)
+        if use_ema:
+            model_forward = EMA(model_forward)
+            state_f = torch.load(os.path.join(opts.load_from_ckpt,'forward_ema.pt'), weights_only=True)
+        else:
+            state_f = torch.load(os.path.join(opts.load_from_ckpt,'forward.pt'), weights_only=True)
+            # state_f = torch.load(os.path.join(opts.load_from_ckpt), weights_only=True)
         updated_dict_f = {}
         for key, value in state_f.items():
             # Remove 'module.' prefix if it exists
@@ -128,7 +139,7 @@ def training(**opts):
     for batch in tqdm(range(batches)):
         sampling_shape = (effective_batch, *network_opts.out_shape)
         cond = torch.randint(0,10,(effective_batch,), device=device)
-        new_data, _ = sde.sample(sampling_shape, device, cond=cond, prob_flow=True)
+        new_data, _ = sde.sample(sampling_shape, device, cond=cond, prob_flow=True, n_time_pts=opts.num_steps)
         new_data = unprocess(new_data)
         if encode:
             new_data = autoencoder.decode(new_data)
@@ -137,12 +148,8 @@ def training(**opts):
         images_np = (new_data * 255 ).clip(0, 255).to(torch.uint8).permute(0, 2, 3, 1).cpu().numpy()
 
         for i in range(effective_batch):
-            # np.save(os.path.join(folder, f'{i}.npy'), new_data[i].cpu().numpy()) 
             PIL.Image.fromarray(images_np[i], 'RGB').save(os.path.join(folder, f'{i}.png'))
-        if opts.make_plots:
-            if dataset_type == 'image':
-                plot_32_mnist(new_data,os.path.join(opts.dir,'samples.png'))
-
+        
         dist.barrier()
         
     dist.destroy_process_group()

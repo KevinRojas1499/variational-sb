@@ -1,3 +1,51 @@
+Starting rank=4, seed=676, world_size=16.
+Starting rank=11, seed=683, world_size=16.
+{'dir': 'experiments/smaller_ema', 'load_from_ckpt': 'experiments/cifar-512/itr_385000', 'batch_size': 512, 'disable_wandb': True, 'dataset': 'cifar', 'model_forward': 'linear', 'model_backward': 'unet', 'encoder': None, 'precondition': True, 'sde': 'linear-momentum-sb', 'damp_coef': 1.0, 'dsm_warm_up': 0, 'dsm_cool_down': 0, 'forward_opt_steps': 100, 'backward_opt_steps': 500, 'seed': 42, 'optimizer': 'adamw', 'lr': 0.0003, 'ema_beta': 0.9999, 'clip_grads': True, 'log_rate': 5000, 'num_epochs': 400}
+0
+{'dir': 'experiments/smaller_ema', 'load_from_ckpt': 'experiments/cifar-512/itr_385000', 'batch_size': 512, 'disable_wandb': True, 'dataset': 'cifar', 'model_forward': 'linear', 'model_backward': 'unet', 'encoder': None, 'precondition': True, 'sde': 'linear-momentum-sb', 'damp_coef': 1.0, 'dsm_warm_up': 0, 'dsm_cool_down': 0, 'forward_opt_steps': 100, 'backward_opt_steps': 500, 'seed': 42, 'optimizer': 'adamw', 'lr': 0.0003, 'ema_beta': 0.9999, 'clip_grads': True, 'log_rate': 5000, 'num_epochs': 400}
+0
+Starting rank=2, seed=674, world_size=16.
+{'dir': 'experiments/smaller_ema', 'load_from_ckpt': 'experiments/cifar-512/itr_385000', 'batch_size': 512, 'disable_wandb': True, 'dataset': 'cifar', 'model_forward': 'linear', 'model_backward': 'unet', 'encoder': None, 'precondition': True, 'sde': 'linear-momentum-sb', 'damp_coef': 1.0, 'dsm_warm_up': 0, 'dsm_cool_down': 0, 'forward_opt_steps': 100, 'backward_opt_steps': 500, 'seed': 42, 'optimizer': 'adamw', 'lr': 0.0003, 'ema_beta': 0.9999, 'clip_grads': True, 'log_rate': 5000, 'num_epochs': 400}
+0
+Starting rank=9, seed=681, world_size=16.
+{'dir': 'experiments/smaller_ema', 'load_from_ckpt': 'experiments/cifar-512/itr_385000', 'batch_size': 512, 'disable_wandb': True, 'dataset': 'cifar', 'model_forward': 'linear', 'model_backward': 'unet', 'encoder': None, 'precondition': True, 'sde': 'linear-momentum-sb', 'damp_coef': 1.0, 'dsm_warm_up': 0, 'dsm_cool_down': 0, 'forward_opt_steps': 100, 'backward_opt_steps': 500, 'seed': 42, 'optimizer': 'adamw', 'lr': 0.0003, 'ema_beta': 0.9999, 'clip_grads': True, 'log_rate': 5000, 'num_epochs': 400}
+0
+Starting rank=15, seed=687, world_size=16.
+{'dir': 'experiments/smaller_ema', 'load_from_ckpt': 'experiments/cifar-512/itr_385000', 'batch_size': 512, 'disable_wandb': True, 'dataset': 'cifar', 'model_forward': 'linear', 'model_backward': 'unet', 'encoder': None, 'precondition': True, 'sde': 'linear-momentum-sb', 'damp_coef': 1.0, 'dsm_warm_up': 0, 'dsm_cool_down': 0, 'forward_opt_steps': 100, 'backward_opt_steps': 500, 'seed': 42, 'optimizer': 'adamw', 'lr': 0.0003, 'ema_beta': 0.9999, 'clip_grads': True, 'log_rate': 5000, 'num_epochs': 400}
+0
+Starting rank=13, seed=685, world_size=16.
+{'dir': 'experiments/smaller_ema', 'load_from_ckpt': 'experiments/cifar-512/itr_385000', 'batch_size': 512, 'disable_wandb': True, 'dataset': 'cifar', 'model_forward': 'linear', 'model_backward': 'unet', 'encoder': None, 'precondition': True, 'sde': 'linear-momentum-sb', 'damp_coef': 1.0, 'dsm_warm_up': 0, 'dsm_cool_down': 0, 'forward_opt_steps': 100, 'backward_opt_steps': 500, 'seed': 42, 'optimizer': 'adamw', 'lr': 0.0003, 'ema_beta': 0.9999, 'clip_grads': True, 'log_rate': 5000, 'num_epochs': 400}
+0
+Starting rank=7, seed=679, world_size=16.
+{'dir': 'experiments/smaller_ema', 'load_from_ckpt': 'experiments/cifar-512/itr_385000', 'batch_size': 512, 'disable_wandb': True, 'dataset': 'cifar', 'model_forward': 'linear', 'model_backward': 'unet', 'encoder': None, 'precondition': True, 'sde': 'linear-momentum-sb', 'damp_coef': 1.0, 'dsm_warm_up': 0, 'dsm_cool_down': 0, 'forward_opt_steps': 100, 'backward_opt_steps': 500, 'seed': 42, 'optimizer': 'adamw', 'lr': 0.0003, 'ema_beta': 0.9999, 'clip_grads': True, 'log_rate': 5000, 'num_epochs': 400}
+0
+Starting rank=8, seed=680, world_size=16.
+{'dir': 'experiments/smaller_ema', 'load_from_ckpt': 'experiments/cifar-512/itr_385000', 'batch_size': 512, 'disable_wandb': True, 'dataset': 'cifar', 'model_forward': 'linear', 'model_backward': 'unet', 'encoder': None, 'precondition': True, 'sde': 'linear-momentum-sb', 'damp_coef': 1.0, 'dsm_warm_up': 0, 'dsm_cool_down': 0, 'forward_opt_steps': 100, 'backward_opt_steps': 500, 'seed': 42, 'optimizer': 'adamw', 'lr': 0.0003, 'ema_beta': 0.9999, 'clip_grads': True, 'log_rate': 5000, 'num_epochs': 400}
+0
+Starting rank=5, seed=677, world_size=16.
+Starting rank=1, seed=673, world_size=16.
+{'dir': 'experiments/smaller_ema', 'load_from_ckpt': 'experiments/cifar-512/itr_385000', 'batch_size': 512, 'disable_wandb': True, 'dataset': 'cifar', 'model_forward': 'linear', 'model_backward': 'unet', 'encoder': None, 'precondition': True, 'sde': 'linear-momentum-sb', 'damp_coef': 1.0, 'dsm_warm_up': 0, 'dsm_cool_down': 0, 'forward_opt_steps': 100, 'backward_opt_steps': 500, 'seed': 42, 'optimizer': 'adamw', 'lr': 0.0003, 'ema_beta': 0.9999, 'clip_grads': True, 'log_rate': 5000, 'num_epochs': 400}
+0
+{'dir': 'experiments/smaller_ema', 'load_from_ckpt': 'experiments/cifar-512/itr_385000', 'batch_size': 512, 'disable_wandb': True, 'dataset': 'cifar', 'model_forward': 'linear', 'model_backward': 'unet', 'encoder': None, 'precondition': True, 'sde': 'linear-momentum-sb', 'damp_coef': 1.0, 'dsm_warm_up': 0, 'dsm_cool_down': 0, 'forward_opt_steps': 100, 'backward_opt_steps': 500, 'seed': 42, 'optimizer': 'adamw', 'lr': 0.0003, 'ema_beta': 0.9999, 'clip_grads': True, 'log_rate': 5000, 'num_epochs': 400}
+0
+Starting rank=6, seed=678, world_size=16.
+{'dir': 'experiments/smaller_ema', 'load_from_ckpt': 'experiments/cifar-512/itr_385000', 'batch_size': 512, 'disable_wandb': True, 'dataset': 'cifar', 'model_forward': 'linear', 'model_backward': 'unet', 'encoder': None, 'precondition': True, 'sde': 'linear-momentum-sb', 'damp_coef': 1.0, 'dsm_warm_up': 0, 'dsm_cool_down': 0, 'forward_opt_steps': 100, 'backward_opt_steps': 500, 'seed': 42, 'optimizer': 'adamw', 'lr': 0.0003, 'ema_beta': 0.9999, 'clip_grads': True, 'log_rate': 5000, 'num_epochs': 400}
+0
+Starting rank=0, seed=672, world_size=16.
+{'dir': 'experiments/smaller_ema', 'load_from_ckpt': 'experiments/cifar-512/itr_385000', 'batch_size': 512, 'disable_wandb': True, 'dataset': 'cifar', 'model_forward': 'linear', 'model_backward': 'unet', 'encoder': None, 'precondition': True, 'sde': 'linear-momentum-sb', 'damp_coef': 1.0, 'dsm_warm_up': 0, 'dsm_cool_down': 0, 'forward_opt_steps': 100, 'backward_opt_steps': 500, 'seed': 42, 'optimizer': 'adamw', 'lr': 0.0003, 'ema_beta': 0.9999, 'clip_grads': True, 'log_rate': 5000, 'num_epochs': 400}
+0
+Starting rank=3, seed=675, world_size=16.
+{'dir': 'experiments/smaller_ema', 'load_from_ckpt': 'experiments/cifar-512/itr_385000', 'batch_size': 512, 'disable_wandb': True, 'dataset': 'cifar', 'model_forward': 'linear', 'model_backward': 'unet', 'encoder': None, 'precondition': True, 'sde': 'linear-momentum-sb', 'damp_coef': 1.0, 'dsm_warm_up': 0, 'dsm_cool_down': 0, 'forward_opt_steps': 100, 'backward_opt_steps': 500, 'seed': 42, 'optimizer': 'adamw', 'lr': 0.0003, 'ema_beta': 0.9999, 'clip_grads': True, 'log_rate': 5000, 'num_epochs': 400}
+0
+Starting rank=10, seed=682, world_size=16.
+{'dir': 'experiments/smaller_ema', 'load_from_ckpt': 'experiments/cifar-512/itr_385000', 'batch_size': 512, 'disable_wandb': True, 'dataset': 'cifar', 'model_forward': 'linear', 'model_backward': 'unet', 'encoder': None, 'precondition': True, 'sde': 'linear-momentum-sb', 'damp_coef': 1.0, 'dsm_warm_up': 0, 'dsm_cool_down': 0, 'forward_opt_steps': 100, 'backward_opt_steps': 500, 'seed': 42, 'optimizer': 'adamw', 'lr': 0.0003, 'ema_beta': 0.9999, 'clip_grads': True, 'log_rate': 5000, 'num_epochs': 400}
+0
+Starting rank=12, seed=684, world_size=16.
+{'dir': 'experiments/smaller_ema', 'load_from_ckpt': 'experiments/cifar-512/itr_385000', 'batch_size': 512, 'disable_wandb': True, 'dataset': 'cifar', 'model_forward': 'linear', 'model_backward': 'unet', 'encoder': None, 'precondition': True, 'sde': 'linear-momentum-sb', 'damp_coef': 1.0, 'dsm_warm_up': 0, 'dsm_cool_down': 0, 'forward_opt_steps': 100, 'backward_opt_steps': 500, 'seed': 42, 'optimizer': 'adamw', 'lr': 0.0003, 'ema_beta': 0.9999, 'clip_grads': True, 'log_rate': 5000, 'num_epochs': 400}
+0
+Starting rank=14, seed=686, world_size=16.
+{'dir': 'experiments/smaller_ema', 'load_from_ckpt': 'experiments/cifar-512/itr_385000', 'batch_size': 512, 'disable_wandb': True, 'dataset': 'cifar', 'model_forward': 'linear', 'model_backward': 'unet', 'encoder': None, 'precondition': True, 'sde': 'linear-momentum-sb', 'damp_coef': 1.0, 'dsm_warm_up': 0, 'dsm_cool_down': 0, 'forward_opt_steps': 100, 'backward_opt_steps': 500, 'seed': 42, 'optimizer': 'adamw', 'lr': 0.0003, 'ema_beta': 0.9999, 'clip_grads': True, 'log_rate': 5000, 'num_epochs': 400}
+0
 Files already downloaded and verified
 Files already downloaded and verified
 Files already downloaded and verified
@@ -6,107 +54,107 @@ Files already downloaded and verified
 Files already downloaded and verified
 Files already downloaded and verified
 Files already downloaded and verified
-Test Loss: 0.02225
-Test Loss: 0.02225
-Test Loss: 0.02225
-Test Loss: 0.02225
-Test Loss: 0.00711
-Test Loss: 0.00711
-Test Loss: 0.00711
-Test Loss: 0.00711
-Test Loss: 0.00429
-Test Loss: 0.00429
-Test Loss: 0.00429
-Test Loss: 0.00429
-Test Loss: 0.00315
-Test Loss: 0.00315
-Test Loss: 0.00315
-Test Loss: 0.00315
-Test Loss: 0.00247
-Test Loss: 0.00247
-Test Loss: 0.00247
-Test Loss: 0.00247
-Test Loss: 0.00226
-Test Loss: 0.00226
-Test Loss: 0.00226
-Test Loss: 0.00226
-Test Loss: 0.00203
-Test Loss: 0.00203
-Test Loss: 0.00203
-Test Loss: 0.00203
-Test Loss: 0.00192
-Test Loss: 0.00192
-Test Loss: 0.00192
-Test Loss: 0.00192
-Test Loss: 0.00156
-Test Loss: 0.00156
-Test Loss: 0.00156
-Test Loss: 0.00156
-Test Loss: 0.00154
-Test Loss: 0.00154
-Test Loss: 0.00154
-Test Loss: 0.00154
-Test Loss: 0.00164
-Test Loss: 0.00164
-Test Loss: 0.00164
-Test Loss: 0.00164
-Test Loss: 0.00140
-Test Loss: 0.00140
-Test Loss: 0.00140
-Test Loss: 0.00140
-Test Loss: 0.00116
-Test Loss: 0.00116
-Test Loss: 0.00116
-Test Loss: 0.00116
-Test Loss: 0.00110
-Test Loss: 0.00110
-Test Loss: 0.00110
-Test Loss: 0.00110
-Test Loss: 0.00105
-Test Loss: 0.00105
-Test Loss: 0.00105
-Test Loss: 0.00105
-Test Loss: 0.00088
-Test Loss: 0.00088
-Test Loss: 0.00088
-Test Loss: 0.00088
-Test Loss: 0.00090
-Test Loss: 0.00090
-Test Loss: 0.00090
-Test Loss: 0.00090
-Test Loss: 0.00085
-Test Loss: 0.00085
-Test Loss: 0.00085
-Test Loss: 0.00085
-Test Loss: 0.00084
-Test Loss: 0.00084
-Test Loss: 0.00084
-Test Loss: 0.00084
-Test Loss: 0.00089
-Test Loss: 0.00089
-Test Loss: 0.00089
-Test Loss: 0.00089
-Test Loss: 0.00087
-Test Loss: 0.00087
-Test Loss: 0.00087
-Test Loss: 0.00087
-Test Loss: 0.00099
-Test Loss: 0.00099
-Test Loss: 0.00099
-Test Loss: 0.00099
-Test Loss: 0.00083
-Test Loss: 0.00083
-Test Loss: 0.00083
-Test Loss: 0.00083
-Test Loss: 0.00070
-Test Loss: 0.00070
-Test Loss: 0.00070
-Test Loss: 0.00070
-Test Loss: 0.00081
-Test Loss: 0.00081
-Test Loss: 0.00081
-Test Loss: 0.00081
-Test Loss: 0.00074
-Test Loss: 0.00074
-Test Loss: 0.00074
-Test Loss: 0.00074
+Files already downloaded and verified
+Files already downloaded and verified
+Files already downloaded and verified
+Files already downloaded and verified
+Files already downloaded and verified
+Files already downloaded and verified
+Files already downloaded and verified
+Files already downloaded and verified
+{'out_shape': [6, 32, 32], 'damp_coef': 1.0}
+{'out_shape': [6, 32, 32], 'damp_coef': 1.0}
+{'out_shape': [6, 32, 32], 'damp_coef': 1.0}
+{'out_shape': [6, 32, 32], 'damp_coef': 1.0}
+{'out_shape': [6, 32, 32], 'damp_coef': 1.0}
+{'out_shape': [6, 32, 32], 'damp_coef': 1.0}
+{'out_shape': [6, 32, 32], 'damp_coef': 1.0}
+{'out_shape': [6, 32, 32], 'damp_coef': 1.0}
+{'out_shape': [6, 32, 32], 'damp_coef': 1.0}
+{'out_shape': [6, 32, 32], 'damp_coef': 1.0}
+{'out_shape': [6, 32, 32], 'damp_coef': 1.0}
+{'out_shape': [6, 32, 32], 'damp_coef': 1.0}
+{'out_shape': [6, 32, 32], 'damp_coef': 1.0}
+{'out_shape': [6, 32, 32], 'damp_coef': 1.0}
+{'out_shape': [6, 32, 32], 'damp_coef': 1.0}
+{'out_shape': [6, 32, 32], 'damp_coef': 1.0}
+Backward Model parameters: 53.0 M
+{'out_shape': [6, 32, 32], 'damp_coef': 1.0}
+Backward Model parameters: 53.0 M
+{'out_shape': [6, 32, 32], 'damp_coef': 1.0}
+Backward Model parameters: 53.0 M
+{'out_shape': [6, 32, 32], 'damp_coef': 1.0}
+Backward Model parameters: 53.0 M
+{'out_shape': [6, 32, 32], 'damp_coef': 1.0}
+Backward Model parameters: 53.0 M
+{'out_shape': [6, 32, 32], 'damp_coef': 1.0}
+Backward Model parameters: 53.0 M
+{'out_shape': [6, 32, 32], 'damp_coef': 1.0}
+Backward Model parameters: 53.0 M
+{'out_shape': [6, 32, 32], 'damp_coef': 1.0}
+Backward Model parameters: 53.0 M
+{'out_shape': [6, 32, 32], 'damp_coef': 1.0}
+Backward Model parameters: 53.0 M
+{'out_shape': [6, 32, 32], 'damp_coef': 1.0}
+Backward Model parameters: 53.0 M
+{'out_shape': [6, 32, 32], 'damp_coef': 1.0}
+Backward Model parameters: 53.0 M
+{'out_shape': [6, 32, 32], 'damp_coef': 1.0}
+Backward Model parameters: 53.0 M
+{'out_shape': [6, 32, 32], 'damp_coef': 1.0}
+Backward Model parameters: 53.0 M
+{'out_shape': [6, 32, 32], 'damp_coef': 1.0}
+Backward Model parameters: 53.0 M
+{'out_shape': [6, 32, 32], 'damp_coef': 1.0}
+Backward Model parameters: 53.0 M
+{'out_shape': [6, 32, 32], 'damp_coef': 1.0}
+Backward Model parameters: 53.0 M
+{'out_shape': [6, 32, 32], 'damp_coef': 1.0}
+Forward Model parameters: 0.0 M
+Loading checkpoint at experiments/cifar-512/itr_385000, now starting at 385000
+Forward Model parameters: 0.0 M
+Forward Model parameters: 0.0 M
+Forward Model parameters: 0.0 M
+Forward Model parameters: 0.0 M
+Forward Model parameters: 0.0 M
+Forward Model parameters: 0.0 M
+Loading checkpoint at experiments/cifar-512/itr_385000, now starting at 385000
+Loading checkpoint at experiments/cifar-512/itr_385000, now starting at 385000
+Loading checkpoint at experiments/cifar-512/itr_385000, now starting at 385000
+Forward Model parameters: 0.0 M
+Loading checkpoint at experiments/cifar-512/itr_385000, now starting at 385000
+Loading checkpoint at experiments/cifar-512/itr_385000, now starting at 385000
+Loading checkpoint at experiments/cifar-512/itr_385000, now starting at 385000
+Loading checkpoint at experiments/cifar-512/itr_385000, now starting at 385000
+Forward Model parameters: 0.0 M
+Forward Model parameters: 0.0 M
+Forward Model parameters: 0.0 M
+Forward Model parameters: 0.0 M
+Loading checkpoint at experiments/cifar-512/itr_385000, now starting at 385000
+Loading checkpoint at experiments/cifar-512/itr_385000, now starting at 385000
+Loading checkpoint at experiments/cifar-512/itr_385000, now starting at 385000
+Loading checkpoint at experiments/cifar-512/itr_385000, now starting at 385000
+Forward Model parameters: 0.0 M
+Forward Model parameters: 0.0 M
+Forward Model parameters: 0.0 M
+Loading checkpoint at experiments/cifar-512/itr_385000, now starting at 385000
+Loading checkpoint at experiments/cifar-512/itr_385000, now starting at 385000
+Loading checkpoint at experiments/cifar-512/itr_385000, now starting at 385000
+Forward Model parameters: 0.0 M
+Loading checkpoint at experiments/cifar-512/itr_385000, now starting at 385000
+Running for 38800 iterations
+Running for 38800 iterations
+Running for 38800 iterations
+Running for 38800 iterations
+Running for 38800 iterations
+Running for 38800 iterations
+Running for 38800 iterations
+Running for 38800 iterations
+Running for 38800 iterations
+Running for 38800 iterations
+Running for 38800 iterations
+Running for 38800 iterations
+Running for 38800 iterations
+Running for 38800 iterations
+Running for 38800 iterations
+Running for 38800 iterations

@@ -7,17 +7,17 @@ def get_dataset(opts) -> MyDataset:
     ds_name = opts.dataset
     batch_size = opts.batch_size
     if  ds_name == 'spiral':
-        return Spiral(batch_size, x_scalar=.4, y_scalar=3.2), [2]
+        return Spiral(batch_size, x_scalar=.4, y_scalar=3.2), [2], 0
     elif ds_name == 'checkerboard':
-        return CheckerBoard(batch_size,x_scalar=1.,y_scalar=7.), [2]
+        return CheckerBoard(batch_size,x_scalar=1.,y_scalar=7.), [2], 0 
     elif ds_name == 'mnist':
         dataset = MNIST('.', train=True, transform=transforms.Compose([transforms.ToTensor(),transforms.Resize((28,28))]), download=True)
-        return dataset, [1,28,28]
+        return dataset, [1,28,28], 10
     elif ds_name == 'fashion':
         dataset = FashionMNIST('.', train=True, transform=transforms.Compose([transforms.ToTensor(),transforms.Resize((28,28))]), download=True)
-        return dataset, [1,28,28]
+        return dataset, [1,28,28], 10
     elif ds_name == 'cifar':
         dataset= CIFAR10('.', train=True,transform=transforms.Compose([transforms.ToTensor(),transforms.RandomHorizontalFlip(p=0.5)]), download=True)
-        return dataset, [3,32,32]
+        return dataset, [3,32,32], 10
     else:
         print('Dataset is not implemented')
