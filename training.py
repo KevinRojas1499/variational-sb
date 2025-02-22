@@ -68,7 +68,7 @@ def is_sb_sde(name):
 @click.option('--dsm_warm_up', type=int, default=0, help='Perform first iterations using just DSM')
 @click.option('--dsm_cool_down', type=int, default=0, help='Stop optimizing the forward model for these last iterations')
 @click.option('--forward_opt_steps', type=int, default=100, help='Number of forward opt steps in alternate training scheme')
-@click.option('--backward_opt_steps', type=int, default=99000, help='Number of backward opt steps in alternate training scheme')
+@click.option('--backward_opt_steps', type=int, default=9900, help='Number of backward opt steps in alternate training scheme')
 # Training Options
 @click.option('--seed', type=int, default=42)
 @click.option('--optimizer',type=click.Choice(['adam','adamw']), default='adamw')
@@ -76,7 +76,7 @@ def is_sb_sde(name):
 @click.option('--ema_beta', type=float, default=.99999)
 @click.option('--clip_grads', is_flag=True, default=True)
 @click.option('--batch_size', type=int, default=128)
-@click.option('--log_rate',type=int,default=5000)
+@click.option('--log_rate',type=int,default=10000)
 @click.option('--num_epochs',type=int,default=1000)
 @click.option('--dir',type=str)
 @click.option('--load_from_ckpt', type=str)
@@ -224,8 +224,16 @@ def training(**opts):
                     relevant_log_info = toy_data_figs([data, new_data, new_data_ema], ['true','normal', 'ema'])
                     wandb.log(relevant_log_info)
                 elif dataset_type == 'image':
-                    plot_32_mnist(new_data,os.path.join(opts.dir,f'itr_{cur_itr+1}_{rank}.png'))
-                    plot_32_mnist(new_data_ema,os.path.join(opts.dir,f'itr_ema_{cur_itr+1}_{rank}.png'))
+                    path_samples = os.path.join(opts.dir,f'itr_{cur_itr+1}_{rank}.png')
+                    path_samples_ema = os.path.join(opts.dir,f'itr_ema_{cur_itr+1}_{rank}.png')
+                    plot_32_mnist(new_data, path_samples)
+                    plot_32_mnist(new_data_ema, path_samples_ema)
+                    if enable_wandb:
+                        wandb.log({
+                                'samples' : wandb.Image(path_samples), 
+                                'samples-ema' : wandb.Image(path_samples_ema),
+                                'itr-samples' : cur_itr + 1
+                            })
                 
                 dist.barrier() 
             cur_itr += 1

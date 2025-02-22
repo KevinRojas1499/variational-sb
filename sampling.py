@@ -84,7 +84,7 @@ def training(**opts):
     assert opts.num_samples % batch_size == 0, 'Num samples must be divisible by world size'
     print(opts)
     print(f'Initializing {rank} with {device}')
-    dataset, out_shape = get_dataset(opts)
+    dataset, out_shape, label_dim = get_dataset(opts)
     is_sb = is_sb_sde(opts.sde)
     sde = get_sde(opts.sde)
     encode = opts.encoder is not None
@@ -99,7 +99,7 @@ def training(**opts):
     
     
     use_ema = not opts.not_ema
-    model_backward = get_model(opts.model_backward,sde, device,network_opts=network_opts)
+    model_backward = get_model(opts.model_backward,sde, device,label_dim=label_dim, network_opts=network_opts)
     print(f"Backward Model parameters: {sum(p.numel() for p in model_backward.parameters() if p.requires_grad)//1e6} M")
     if use_ema:
         model_backward = EMA(model_backward)
