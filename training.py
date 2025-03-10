@@ -73,11 +73,11 @@ def is_sb_sde(name):
 @click.option('--seed', type=int, default=42)
 @click.option('--optimizer',type=click.Choice(['adam','adamw']), default='adamw')
 @click.option('--lr', type=float, default=3e-4)
-@click.option('--ema_beta', type=float, default=.99999)
+@click.option('--ema_beta', type=float, default=.9999)
 @click.option('--clip_grads', is_flag=True, default=True)
 @click.option('--batch_size', type=int, default=128)
 @click.option('--log_rate',type=int,default=10000)
-@click.option('--num_epochs',type=int,default=1000)
+@click.option('--num_epochs',type=int,default=10000)
 @click.option('--dir',type=str)
 @click.option('--load_from_ckpt', type=str)
 @click.option('--disable_wandb',is_flag=True,default=False)
@@ -87,7 +87,7 @@ def training(**opts):
     
     dist.init_process_group('nccl')
     world_size = dist.get_world_size()
-    assert batch_size % world_size == 0, f"Batch size must be divisible by world size."
+    assert batch_size % world_size == 0, f'Batch size must be divisible by world size, got {batch_size} and {world_size}'
     batch_size//=world_size
     rank = dist.get_rank()
     device = rank % torch.cuda.device_count()
@@ -124,14 +124,14 @@ def training(**opts):
         out_shape[0] *= 2 
     network_opts = dotdict({'out_shape' : out_shape, 'damp_coef' : opts.damp_coef})
     model_backward = DDP(get_model(opts.model_backward,sde, device,label_dim=label_dim, network_opts=network_opts))
-    opt_b, ema_backward, sched_b = build_optimizer_ema_sched(model_backward,opts.optimizer,opts.lr, step_size=10000)
+    opt_b, ema_backward, sched_b = build_optimizer_ema_sched(model_backward,opts.optimizer,opts.lr, step_size=10000, ema_beta=opts.ema_beta)
     sde.backward_score, sampling_sde.backward_score = model_backward, ema_backward
     print(f"Backward Model parameters: {sum(p.numel() for p in model_backward.parameters() if p.requires_grad)//1e6} M")
     opt_f, ema_forward, sched_f = None, None, None
     if is_sb:
         # We need a forward model
         model_forward  = DDP(get_model(opts.model_forward,sde,device,network_opts=network_opts))
-        opt_f, ema_forward, sched_f = build_optimizer_ema_sched(model_forward,opts.optimizer,opts.lr/100, step_size=100)
+        opt_f, ema_forward, sched_f = build_optimizer_ema_sched(model_forward,opts.optimizer,opts.lr/100, step_size=100, ema_beta=opts.ema_beta)
         sde.forward_score, sampling_sde.forward_score = model_forward, ema_forward
         print(f"Forward Model parameters: {sum(p.numel() for p in model_forward.parameters() if p.requires_grad)//1e6} M")
     
@@ -161,7 +161,7 @@ def training(**opts):
     print(f'Running for {num_iters} iterations')
     cur_itr = start_iter
     for epoch in range(epochs):
-        pbar = tqdm(data_loader) if rank == 0 else data_loader
+        pbar = tqdm(data_loader, leave=False) if rank == 0 else data_loader
         for _data in pbar:
             if dataset_type == 'toy':
                 data, cond = _data, None
@@ -198,16 +198,22 @@ def training(**opts):
                 path = os.path.join(opts.dir, f'itr_{cur_itr+1}/')
                 os.makedirs(path,exist_ok=True) 
                 if rank == 0:
-                    torch.save(model_backward.module.state_dict(),os.path.join(path, 'backward.pt'))
-                    torch.save(ema_backward.state_dict(),os.path.join(path, 'backward_ema.pt'))
-                    torch.save(routine.opt_b.state_dict(), os.path.join(path,'opt_b.pt')) 
-                    torch.save(routine.sched_b.state_dict(), os.path.join(path,'sched_b.pt')) 
+                    snapshot = {
+                        'backward' : model_backward.module.state_dict(),
+                        'backward_ema' : ema_backward.module.ema.state_dict(),
+                        'opt_b' : routine.opt_b.state_dict(),
+                        'sched_b' : routine.sched_b.state_dict()
+                    }
                     if is_sb:
-                        torch.save(model_forward.module.state_dict(),os.path.join(path, 'forward.pt'))
-                        torch.save(ema_forward.state_dict(),os.path.join(path, 'forward_ema.pt'))
-                        torch.save(routine.opt_f.state_dict(), os.path.join(path,'opt_f.pt')) 
-                        torch.save(routine.sched_f.state_dict(), os.path.join(path,'sched_f.pt')) 
+                        snapshot.update({
+                            'forward': model_forward.module.state_dict(),
+                            'forward_ema': ema_forward.module.ema.state_dict(),
+                            'opt_f': routine.opt_f.state_dict(),
+                            'sched_f': routine.sched_f.state_dict()
+                        })
                     
+                    torch.save(snapshot, os.path.join(path, 'snapshot.pt'))
+                
                 n_samples = 2000 if dataset_type == 'toy' else 32 
                 sampling_shape = (n_samples, *out_shape)
                 labels = cond[:n_samples]

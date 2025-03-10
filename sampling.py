@@ -2,20 +2,16 @@ import os
 
 import click
 import matplotlib.pyplot as plt
-import numpy as np
-import plotly.graph_objects as go
 import torch
 import torch.distributed as dist
 from tqdm import tqdm
 import PIL.Image
 import wandb
 from datasets.dataset_utils import get_dataset
-from utils.metrics import get_w2
 from utils.misc import dotdict
 from utils.model_utils import get_model, get_preconditioned_model
 from utils.sde_lib import get_sde
 from utils.autoencoder import Autoencoder
-from ema_pytorch import EMA
 
 def init_wandb(opts):
     wandb.init(
@@ -82,7 +78,8 @@ def training(**opts):
     batch_size = opts.batch_size
     assert batch_size % world_size == 0, 'Batch size must be divisible by world size'
     assert opts.num_samples % batch_size == 0, 'Num samples must be divisible by world size'
-    print(opts)
+    if rank == 0:
+        print(opts)
     print(f'Initializing {rank} with {device}')
     dataset, out_shape, label_dim = get_dataset(opts)
     is_sb = is_sb_sde(opts.sde)
@@ -101,34 +98,19 @@ def training(**opts):
     use_ema = not opts.not_ema
     model_backward = get_model(opts.model_backward,sde, device,label_dim=label_dim, network_opts=network_opts)
     print(f"Backward Model parameters: {sum(p.numel() for p in model_backward.parameters() if p.requires_grad)//1e6} M")
+    snapshot = torch.load(opts.load_from_ckpt, weights_only=True)
     if use_ema:
-        model_backward = EMA(model_backward)
-        state = torch.load(os.path.join(opts.load_from_ckpt, 'backward_ema.pt'), weights_only=True)
+        model_backward.ema.load_state_dict(snapshot['backward_ema'], strict=True)
     else:
-        state = torch.load(os.path.join(opts.load_from_ckpt, 'backward.pt'), weights_only=True)
-        # state = torch.load(os.path.join(opts.load_from_ckpt), weights_only=True)
-    updated_dict = {}
-    for key, value in state.items():
-        # Remove 'module.' prefix if it exists
-        new_key = key.replace('module.', '')
-        updated_dict[new_key] = value
-    model_backward.load_state_dict(updated_dict)
+        model_backward.load_state_dict(snapshot['backward'], strict=True)
 
     if is_sb:
         # We need a forward model
         model_forward  = get_model(opts.model_forward,sde,device,network_opts=network_opts)
         if use_ema:
-            model_forward = EMA(model_forward)
-            state_f = torch.load(os.path.join(opts.load_from_ckpt,'forward_ema.pt'), weights_only=True)
+            model_forward.load_state_dict(snapshot['forward_ema'])
         else:
-            state_f = torch.load(os.path.join(opts.load_from_ckpt,'forward.pt'), weights_only=True)
-            # state_f = torch.load(os.path.join(opts.load_from_ckpt), weights_only=True)
-        updated_dict_f = {}
-        for key, value in state_f.items():
-            # Remove 'module.' prefix if it exists
-            new_key = key.replace('module.', '')
-            updated_dict_f[new_key] = value
-        model_forward.load_state_dict(updated_dict_f)
+            model_forward.load_state_dict(snapshot['forward'])
         print(f"Forward Model parameters: {sum(p.numel() for p in model_forward.parameters() if p.requires_grad)//1e6} M")
         sde.forward_score = model_forward
 
@@ -150,7 +132,6 @@ def training(**opts):
         for i in range(effective_batch):
             PIL.Image.fromarray(images_np[i], 'RGB').save(os.path.join(folder, f'{i}.png'))
         
-        dist.barrier()
         
     dist.destroy_process_group()
     
