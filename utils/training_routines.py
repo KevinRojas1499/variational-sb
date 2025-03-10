@@ -116,7 +116,7 @@ class VariationalDiffusionTrainingRoutine():
         
         opt.step()
         sched.step()
-        ema.update()
+        ema.update(model)
         
         return loss
 

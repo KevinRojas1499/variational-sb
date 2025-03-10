@@ -86,23 +86,22 @@ class LinearSDE(SDE):
     pass  
 class VP(LinearSDE):
 
-  def __init__(self,T=1.,delta=1e-3, beta_max=5, backward_model=None):
+  def __init__(self,T=1.,delta=1e-5, beta_max=5, backward_model=None):
     LinearSDE.__init__(self,backward_model=backward_model,is_augmented=False)
     self._T = T
     self.delta = delta
     self.beta_max = 19.9
+    self.b_min = 0.1
 
   @property
   def T(self):
     return self._T
   
   def beta(self, t):
-    b_min = 0.1
-    return b_min+ t*(self.beta_max-b_min) # self.beta_max
+    return self.b_min+ t*(self.beta_max-self.b_min) # self.beta_max
   
   def beta_int(self, t):
-    b_min = 0.1
-    return  b_min * t +(self.beta_max-b_min) * t**2/2
+    return  self.b_min * t +(self.beta_max-self.b_min) * t**2/2
   
   def marginal_prob(self, x, t):
     # If    x is of shape [B, H, W, C]
@@ -115,7 +114,7 @@ class VP(LinearSDE):
     return (1 - torch.exp(-self.beta_int(t)))**.5
   
   def drift(self, x,t, forward=True,cond=None):
-    beta = self.beta(t)
+    beta = self.beta(t.reshape(-1,*([1] * len(x.shape[1:]))))
     if forward:
       return -.5 * beta * x
     else:
@@ -465,52 +464,6 @@ class LinearMomentumSchrodingerBridge(LinearSDE):
     # print("COVARIANCE")
     # print(noise.var(dim=0))
     return noise
-
-  @torch.no_grad()
-  def sample(self, shape, device, backward=True, 
-            in_cond=None, prob_flow=True, 
-            cond=None, n_time_pts=125, return_traj=False):
-    zt = self.prior_sampling(shape,device) if backward else in_cond
-    assert zt is not None
-    time_pts = torch.linspace(0. if backward else self.delta, self.T - self.delta, n_time_pts, device=device)
-    time_pts = torch.cat((time_pts, torch.ones_like(time_pts[:1]) * self.T))
-    if return_traj:
-      trajectories = torch.empty((zt.shape[0], n_time_pts, *zt.shape[1:]),device=zt.device) 
-    
-    N = time_pts.shape[0]
-    for i, t in tqdm(enumerate(time_pts), total=N, leave=False):
-      if return_traj:
-        trajectories[:,i] = zt
-      if i == N - 1:
-        break
-      dt = time_pts[i+1] - t 
-      dt = -dt if backward else dt 
-      t_shape = self.T - t if backward else t
-      t_shape = t_shape.unsqueeze(-1).expand(zt.shape[0])
-
-      drift = self.probability_flow_drift(zt,t_shape, cond)
-      xt,vt = zt.chunk(2,dim=1)
-      xt = xt + vt * dt
-      v_drift = -xt - self.gamma * vt + 2 * self.gamma * self.forward_score(zt,t,cond) \
-        - 2 * self.gamma * self.backward_score(zt,t,cond)
-      vt = vt + dt * (v_drift)
-      zt_hat = torch.cat((xt,zt), dim=1)
-       
-      if backward and i+1 != N-1:
-        t_hat = self.T - time_pts[i+1] if backward else time_pts[i+1]
-        t_hat = t_hat.unsqueeze(-1).expand(xt.shape[0])
-
-        xt_hat,vt_hat = zt_hat.chunk(2,dim=1)
-        xt = xt + .5 * (vt + vt_hat) * dt
-        v_drift_hat = -xt_hat - self.gamma * vt_hat + 2 * self.gamma * self.forward_score(zt_hat,t_hat,cond) \
-          - 2 * self.gamma * self.backward_score(zt,t,cond)
-        vt = vt + .5 * dt * (v_drift_hat + v_drift)
-        zt = torch.cat((xt,zt), dim=1)
-      else:
-        zt = zt_hat
-    
-    zt = zt.chunk(2,dim=1)[0] if self.is_augmented else zt
-    return zt, (trajectories if return_traj else None)
 
 class CLD(SDE):
   # We assume that images have shape [B, C, H, W] 

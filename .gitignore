@@ -14,4 +14,6 @@ cifar-10-python.tar.gz
 *.npy
 results2/
 results3/
-resuslts4/
+results4/
+results4/
+grid_search_results/
